@@ -11,6 +11,7 @@
   "dependencies": {
     "@langchain/core": "^1.1.8",
     "@langchain/mistralai": "^1.0.2",
+    "axios": "^1.6.0",
     "firebase": "^12.6.0",
     "lucide-react": "^0.556.0",
     "react": "^19.2.1",

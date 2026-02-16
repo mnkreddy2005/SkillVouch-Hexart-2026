@@ -3,12 +3,24 @@ import cors from "cors"
 import dotenv from "dotenv"
 import mysql from "mysql2/promise"
 import axios from "axios"
+import helmet from "helmet"
 
 dotenv.config()
 
 const app = express()
-app.use(cors())
-app.use(express.json())
+
+// Security headers
+app.use(helmet())
+
+// CORS configuration
+app.use(cors({
+  origin: process.env.FRONTEND_URL || "http://localhost:3000",
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}))
+
+// JSON parsing with size limit
+app.use(express.json({ limit: "10kb" }))
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -333,13 +345,22 @@ app.post("/ai", async (req, res) => {
     res.json(response.data)
   } catch (err) {
     console.error('Mistral AI Error:', err.response?.data || err.message)
-    res.status(500).json({ error: err.message })
+    res.status(500).json({
+      success: false,
+      message: "AI service unavailable",
+      error: err.message
+    })
   }
 })
 
 // Health check route
-app.get("/", (req, res) => {
-  res.send("Backend running successfully 🚀")
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "OK", uptime: process.uptime() })
+})
+
+// API test endpoint
+app.get("/api/test", (req, res) => {
+  res.json({ message: "API is working", timestamp: new Date().toISOString() })
 })
 
 // API status route
@@ -397,4 +418,14 @@ process.on('SIGINT', () => {
 process.on('SIGTERM', () => {
   console.log('\n🛑 Server received SIGTERM, shutting down...')
   process.exit(0)
+})
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err.stack)
+  res.status(500).json({
+    success: false,
+    message: "Internal Server Error",
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+  })
 })
