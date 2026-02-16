@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "Frontend/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "https://skillvouch-hexart-2026.onrender.com/api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/Frontend/$1"
+    }
+  ],
+  "env": {
+    "VITE_API_URL": "https://skillvouch-hexart-2026.onrender.com",
+    "VITE_MISTRAL_API_KEY": "@vite-mistral-api-key"
+  },
+  "buildCommand": "cd Frontend && npm install && npm run build",
+  "outputDirectory": "Frontend/dist",
+  "installCommand": "cd Frontend && npm install"
+}

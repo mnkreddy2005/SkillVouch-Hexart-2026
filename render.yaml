@@ -1,0 +1,28 @@
+services:
+  # Backend Service (Render)
+  - type: web
+    name: skillvouch-backend
+    env: node
+    plan: free
+    buildCommand: "cd Backend && npm install"
+    startCommand: "cd Backend && npm start"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: DB_HOST
+        value: mysql-meruva.alwaysdata.net
+      - key: DB_USER
+        value: meruva
+      - key: DB_PASS
+        value: meruva_12345
+      - key: DB_NAME
+        value: meruva_skillvouch
+      - key: MISTRAL_API_KEY
+        value: WCDEgp3sS6bERPYNBvhYvzFyT5UzVkdZ
+      - key: MISTRAL_MODEL
+        value: mistral-small
+
+  # Frontend Service (Vercel - separate deployment)
+  # Note: Frontend should be deployed separately to Vercel
