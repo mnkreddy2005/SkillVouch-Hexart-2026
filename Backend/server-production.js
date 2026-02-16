@@ -134,14 +134,6 @@ app.get("/api/status", (req, res) => {
   })
 })
 
-// Serve static files from frontend build
-app.use(express.static('Frontend/dist'))
-
-// Catch all handler - return index.html for SPA
-app.get('*', (req, res) => {
-  res.sendFile('index.html', { root: 'Frontend/dist' })
-})
-
 const PORT = process.env.PORT || 5000
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`)
