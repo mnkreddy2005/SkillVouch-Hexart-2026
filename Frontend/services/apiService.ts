@@ -1,14 +1,10 @@
 import { User, ExchangeRequest, Message, ExchangeFeedback } from '../types';
 import { suggestSkillsDirect, generateRoadmapDirect } from './mistralDirectService';
 
-// Use environment variable for API URL - IMPORTANT: Frontend must use backend URL from VITE_API_URL
-// Do NOT call Vercel domain directly - use Render backend URL instead
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-// Helper to simulate delay for "real" feel (reduced for better performance)
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Safe UUID generator that works even if crypto.randomUUID is not available
 const generateId = (): string => {
   if (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function') {
     return (crypto as any).randomUUID();
@@ -30,68 +26,47 @@ const generateId = (): string => {
   });
 };
 
-// Session storage for current user
-const SESSION_KEY = 'skillvouch_session';
-
 export const apiService = {
-
-  // --- SESSION ---
   getCurrentSession: (): User | null => {
     try {
-      const stored = localStorage.getItem(SESSION_KEY);
-      return stored ? JSON.parse(stored) : null;
-    } catch { return null; }
+      const storedUser = localStorage.getItem("user");
+      const storedToken = localStorage.getItem("token");
+      if (storedUser && storedToken) {
+        const userData = JSON.parse(storedUser);
+        return userData;
+      }
+    } catch (error) {
+      console.warn('Error reading session from localStorage:', error);
+      localStorage.removeItem("user");
+      localStorage.removeItem("token");
+    }
+    return null;
   },
 
   setSession: (user: User) => {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+    localStorage.setItem("user", JSON.stringify(user));
+    localStorage.setItem("token", "session-token-" + user.id);
   },
 
-  logout: async () => {
-    await delay(50); // Reduced from 300ms
-    localStorage.removeItem(SESSION_KEY);
-  },
-
-  // --- USER MGMT ---
-  getUsers: async (): Promise<User[]> => {
-    await delay(50); // Reduced from 300ms
-    const response = await fetch(`${API_BASE_URL}/users`);
-    if (!response.ok) throw new Error('Failed to fetch users');
-    return response.json();
-  },
-
-  getUserById: async (id: string): Promise<User | undefined> => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/users/${id}`);
-      if (!response.ok) return undefined;
-      return response.json();
-    } catch {
-      return undefined;
-    }
+  logout: () => {
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
   },
 
   saveUser: async (user: User) => {
-    // No delay for save operations to make them feel instant
-    const response = await fetch(`${API_BASE_URL}/users/${user.id}`, {
+    const response = await fetch(`${API_URL}/api/users/${user.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(user)
     });
     if (!response.ok) throw new Error('Failed to save user');
-    
-    // Update session if it's the current user
-    const session = apiService.getCurrentSession();
-    if (session && session.id === user.id) {
-      apiService.setSession(user);
-    }
   },
 
-  // --- AUTH ---
   login: async (email: string, password: string): Promise<User> => {
-    await delay(100); // Reduced from 500ms
-    
+    await delay(100);
+
     try {
-      const response = await fetch(`${API_BASE_URL}/login`, {
+      const response = await fetch(`${API_URL}/api/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -107,7 +82,6 @@ export const apiService = {
       const data = await response.json();
       const user = data.user;
 
-      // Store user and token in localStorage
       localStorage.setItem("user", JSON.stringify(user));
       if (data.token) {
         localStorage.setItem("token", data.token);
@@ -122,42 +96,33 @@ export const apiService = {
   },
 
   signup: async (name: string, email: string, password: string): Promise<User> => {
-    await delay(200); // Reduced from 800ms
-    
-    try {
-      // Default Avatar (Initial Initials/Placeholder)
-      const avatarUrl = `https://ui-avatars.com/api/?background=6366f1&color=fff&name=${encodeURIComponent(name)}`;
-      
-      const newUser = {
-        id: generateId(),
-        name: name.trim(),
-        email: email.trim(),
-        password: password,
-        bio: '',
-        avatar: avatarUrl,
-        skillsKnown: [],
-        skillsToLearn: [],
-        rating: 5.0
-      };
+    await delay(200);
 
-      const response = await fetch(`${API_BASE_URL}/users`, {
+    try {
+      const userId = generateId();
+      const response = await fetch(`${API_URL}/api/users`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(newUser),
+        body: JSON.stringify({
+          id: userId,
+          name,
+          email,
+          password,
+          skillsKnown: [],
+          skillsToLearn: []
+        }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        if (response.status === 409) {
-          throw new Error('Email already exists');
-        }
-        throw new Error(errorData.error || 'Failed to create account');
+        throw new Error(errorData.error || 'Signup failed');
       }
 
       const user = await response.json();
-      apiService.setSession(user);
+      localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("token", "signup-token-" + user.id);
       return user;
     } catch (error) {
       console.error('Signup error:', error);
@@ -165,55 +130,46 @@ export const apiService = {
     }
   },
 
-  googleLogin: async (): Promise<User> => {
-    await delay(800);
-    // Simulate Google Login
-    const mockUser: User = {
-        id: 'google_' + Date.now(),
-        name: 'Google User',
-        email: `google_${Date.now()}@example.com`,
-        password: '',
-        avatar: `https://ui-avatars.com/api/?background=random&name=Google+User`,
-        bio: 'Signed in via Google',
-        skillsKnown: [],
-        skillsToLearn: [],
-        rating: 5
-    };
-    await apiService.saveUser(mockUser);
-    return mockUser;
+  getUserById: async (id: string): Promise<User> => {
+    const response = await fetch(`${API_URL}/api/users/${id}`);
+    if (!response.ok) throw new Error('Failed to fetch user');
+    return response.json();
   },
 
-  // --- REQUESTS ---
-  createExchangeRequest: async (request: ExchangeRequest) => {
-    await delay(50); // Reduced from 300ms
-    const response = await fetch(`${API_BASE_URL}/requests`, {
+  getUsers: async (): Promise<User[]> => {
+    const response = await fetch(`${API_URL}/api/users`);
+    if (!response.ok) throw new Error('Failed to fetch users');
+    return response.json();
+  },
+
+  getRequests: async (userId: string): Promise<ExchangeRequest[]> => {
+    const response = await fetch(`${API_URL}/api/requests?userId=${userId}`);
+    if (!response.ok) throw new Error('Failed to fetch requests');
+    return response.json();
+  },
+
+  createRequest: async (request: Omit<ExchangeRequest, 'id' | 'status' | 'createdAt' | 'updatedAt'>): Promise<ExchangeRequest> => {
+    const response = await fetch(`${API_URL}/api/requests`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request)
     });
     if (!response.ok) throw new Error('Failed to create request');
-  },
-
-  getRequestsForUser: async (userId: string): Promise<ExchangeRequest[]> => {
-    await delay(50); // Reduced from 300ms
-    const response = await fetch(`${API_BASE_URL}/requests?userId=${userId}`);
-    if (!response.ok) throw new Error('Failed to fetch requests');
     return response.json();
   },
 
-  updateExchangeRequestStatus: async (id: string, status: ExchangeRequest['status']): Promise<{ success: true; status: ExchangeRequest['status']; completedAt?: number; }> => {
-    const response = await fetch(`${API_BASE_URL}/requests/${id}/status`, {
+  updateRequestStatus: async (id: string, status: string): Promise<ExchangeRequest> => {
+    const response = await fetch(`${API_URL}/api/requests/${id}/status`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status })
     });
-    if (!response.ok) throw new Error('Failed to update request status');
+    if (!response.ok) throw new Error('Failed to update request');
     return response.json();
   },
 
-  // --- FEEDBACK ---
-  submitExchangeFeedback: async (feedback: Omit<ExchangeFeedback, 'id' | 'createdAt'> & Partial<Pick<ExchangeFeedback, 'id' | 'createdAt'>>): Promise<ExchangeFeedback> => {
-    const response = await fetch(`${API_BASE_URL}/feedback`, {
+  submitFeedback: async (feedback: Omit<ExchangeFeedback, 'id' | 'createdAt'>): Promise<ExchangeFeedback> => {
+    const response = await fetch(`${API_URL}/api/feedback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(feedback)
@@ -223,21 +179,19 @@ export const apiService = {
   },
 
   getReceivedFeedback: async (userId: string): Promise<ExchangeFeedback[]> => {
-    const response = await fetch(`${API_BASE_URL}/feedback/received?userId=${userId}`);
+    const response = await fetch(`${API_URL}/api/feedback/received?userId=${userId}`);
     if (!response.ok) throw new Error('Failed to fetch feedback');
     return response.json();
   },
 
   getFeedbackStats: async (userId: string): Promise<{ avgStars: number; count: number }> => {
-    const response = await fetch(`${API_BASE_URL}/feedback/stats?userId=${userId}`);
+    const response = await fetch(`${API_URL}/api/feedback/stats?userId=${userId}`);
     if (!response.ok) throw new Error('Failed to fetch feedback stats');
     return response.json();
   },
 
-  // --- MESSAGING ---
   sendMessage: async (senderId: string, receiverId: string, content: string): Promise<Message> => {
-    // No delay for instant messaging
-    const response = await fetch(`${API_BASE_URL}/messages`, {
+    const response = await fetch(`${API_URL}/api/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ senderId, receiverId, content })
@@ -246,98 +200,89 @@ export const apiService = {
     return response.json();
   },
 
-  getUnreadCount: async (userId: string): Promise<number> => {
-    const response = await fetch(`${API_BASE_URL}/messages/unread-count?userId=${userId}`);
-    if (!response.ok) return 0;
-    const result = await response.json();
-    return result.count || 0;
-  },
-
-  markAsRead: async (userId: string, senderId: string) => {
-    const response = await fetch(`${API_BASE_URL}/messages/mark-as-read`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, senderId })
-    });
-    if (!response.ok) throw new Error('Failed to mark messages as read');
-  },
-
   getConversation: async (user1Id: string, user2Id: string): Promise<Message[]> => {
-    const response = await fetch(`${API_BASE_URL}/messages/conversation?user1Id=${user1Id}&user2Id=${user2Id}`);
+    const response = await fetch(`${API_URL}/api/messages/conversation?user1Id=${user1Id}&user2Id=${user2Id}`);
     if (!response.ok) throw new Error('Failed to fetch conversation');
     return response.json();
   },
 
-  subscribeToConversation: (user1Id: string, user2Id: string, callback: (messages: Message[]) => void) => {
-    const checkMessages = async () => {
-        try {
-            const conversation = await apiService.getConversation(user1Id, user2Id);
-            callback(conversation);
-        } catch (error) {
-            console.error('Error fetching conversation:', error);
-        }
-    };
+  getUnreadCount: async (userId: string): Promise<number> => {
+    const response = await fetch(`${API_URL}/api/messages/unread-count?userId=${userId}`);
+    if (!response.ok) throw new Error('Failed to fetch unread count');
+    const data = await response.json();
+    return data.unreadCount || 0;
+  },
 
-    checkMessages(); // Initial
-    const interval = setInterval(checkMessages, 1000); // Polling every 1s for "real-time" feel
-    return () => clearInterval(interval);
+  markAsRead: async (userId: string, senderId: string) => {
+    await fetch(`${API_URL}/api/messages/mark-as-read`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, senderId })
+    });
   },
 
   getConversations: async (userId: string): Promise<User[]> => {
-    await delay(50); // Reduced from 300ms
-    const response = await fetch(`${API_BASE_URL}/conversations?userId=${userId}`);
+    const response = await fetch(`${API_URL}/api/conversations?userId=${userId}`);
     if (!response.ok) throw new Error('Failed to fetch conversations');
     return response.json();
   },
 
-  // --- QUIZ ---
   generateQuiz: async (skill: string, difficulty: string) => {
     let retryCount = 0;
     const maxRetries = 3;
-    
+
     while (retryCount < maxRetries) {
       try {
         console.log(`Attempt ${retryCount + 1}: Generating quiz for ${skill} (${difficulty})`);
-        
-        const response = await fetch('/api/quiz/generate', {
+
+        const response = await fetch(`${API_URL}/api/quizzes/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ skill, difficulty })
         });
-        
+
         if (!response.ok) {
           const errorText = await response.text();
           console.error(`API error (attempt ${retryCount + 1}):`, response.status, errorText);
-          
+
           if (retryCount === maxRetries - 1) {
             throw new Error(`Failed to generate quiz: ${response.status} ${errorText}`);
           }
-          
+
           retryCount++;
           await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
           continue;
         }
-        
+
         const data = await response.json();
         console.log('Quiz generated successfully:', data);
         return data;
-        
+
       } catch (error) {
         console.error(`Quiz generation error (attempt ${retryCount + 1}):`, error);
-        
+
         if (retryCount === maxRetries - 1) {
           throw new Error('Failed to generate quiz. Please try again.');
         }
-        
+
         retryCount++;
         await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
       }
     }
-    
+
     throw new Error('Failed to generate quiz after multiple attempts');
   },
 
-  // --- SKILL SUGGESTION ---
+  submitQuiz: async (userId: string, quizId: string, answers: number[]) => {
+    const response = await fetch(`${API_URL}/api/quizzes/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, quizId, answers })
+    });
+    if (!response.ok) throw new Error('Failed to submit quiz');
+    return response.json();
+  },
+
   suggestSkills: async (currentSkills: string[], currentGoals: string[] = []) => {
     try {
       const skills = await suggestSkillsDirect(currentSkills, currentGoals);
@@ -348,10 +293,9 @@ export const apiService = {
     }
   },
 
-  // --- ROADMAP GENERATION ---
   generateRoadmap: async (skill: string) => {
     try {
-      const response = await fetch('/api/roadmap/generate', {
+      const response = await fetch(`${API_URL}/api/roadmap/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skill })

@@ -4,19 +4,13 @@ import mysql from 'mysql2/promise';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 
-// Load environment variables
 dotenv.config();
 
-// ========================================
-// DATABASE CONNECTION HARDENING
-// ========================================
-
-// MySQL Connection Pool Configuration
 const pool = mysql.createPool({
   host: process.env.DB_HOST || process.env.MYSQL_HOST || 'mysql-meruva.alwaysdata.net',
   port: Number(process.env.DB_PORT || process.env.MYSQL_PORT || 3306),
   user: process.env.DB_USER || process.env.MYSQL_USER || 'meruva',
-  password: process.env.DB_PASS || process.env.MYSQL_PASSWORD || 'meruva_12345',
+  password: process.env.DB_PASS || process.env.MYSQL_PASSWORD || 'Nitinmeruva',
   database: process.env.DB_NAME || process.env.MYSQL_DATABASE || 'meruva_skillvouch',
   waitForConnections: true,
   connectionLimit: 10,
@@ -27,23 +21,18 @@ const pool = mysql.createPool({
   keepAliveInitialDelay: 0,
 });
 
-// Database connection status
 let dbConnected = false;
 let dbConnectionAttempts = 0;
 const maxDbRetries = 5;
 
-// Query function with strict validation
 async function query(sql, params = []) {
   if (!dbConnected) {
     throw new Error('Database connection unavailable');
   }
-
-  // Strict query validation - ensure parameterized queries
   const paramCount = (sql.match(/\?/g) || []).length;
   if (paramCount !== params.length) {
     throw new Error(`Parameter count mismatch: expected ${paramCount}, got ${params.length}`);
   }
-
   try {
     const connection = await pool.getConnection();
     try {
@@ -58,33 +47,6 @@ async function query(sql, params = []) {
   }
 }
 
-// Transaction support
-async function transaction(callback) {
-  if (!dbConnected) {
-    throw new Error('Database connection unavailable');
-  }
-
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
-
-    try {
-      const result = await callback(connection);
-      await connection.commit();
-      return result;
-    } catch (err) {
-      await connection.rollback();
-      throw err;
-    }
-  } finally {
-    connection.release();
-  }
-}
-
-// ========================================
-// DATABASE CONNECTION VALIDATION
-// ========================================
-
 async function checkDatabaseConnection() {
   dbConnectionAttempts++;
   console.log(`🔍 Checking database connection (attempt ${dbConnectionAttempts}/${maxDbRetries})...`);
@@ -93,6 +55,7 @@ async function checkDatabaseConnection() {
     const connection = await pool.getConnection();
     await connection.ping();
     await connection.execute('SELECT 1');
+    connection.release();
 
     if (!dbConnected) {
       dbConnected = true;
@@ -100,8 +63,6 @@ async function checkDatabaseConnection() {
       console.log(`📊 Database: ${process.env.DB_NAME || process.env.MYSQL_DATABASE}`);
       console.log(`🌐 Host: ${process.env.DB_HOST || process.env.MYSQL_HOST}`);
     }
-
-    connection.release();
     return true;
   } catch (err) {
     dbConnected = false;
@@ -116,10 +77,6 @@ async function checkDatabaseConnection() {
     return false;
   }
 }
-
-// ========================================
-// TABLE CREATION AND VALIDATION
-// ========================================
 
 const requiredTables = [
   'users',
@@ -274,15 +231,10 @@ async function createTable(tableName) {
   console.log(`✅ Table '${tableName}' created successfully`);
 }
 
-// ========================================
-// JSON SAFETY HELPERS
-// ========================================
-
 function safeParseJSON(value, defaultValue = null) {
   if (value === null || value === undefined || value === '') {
     return defaultValue;
   }
-
   try {
     return JSON.parse(value);
   } catch (err) {
@@ -291,39 +243,28 @@ function safeParseJSON(value, defaultValue = null) {
   }
 }
 
-function safeStringifyJSON(value) {
-  try {
-    return JSON.stringify(value);
-  } catch (err) {
-    console.error('JSON stringify error:', err.message, 'Value:', value);
-    return '[]'; // Default empty array
+function validateSkill(skill) {
+  if (!skill || typeof skill !== 'object') {
+    throw new Error('Skill must be an object');
   }
+  if (!skill.name || typeof skill.name !== 'string') {
+    throw new Error('Skill must have a valid name');
+  }
+  return {
+    name: skill.name.trim(),
+    verified: skill.verified === true,
+    level: skill.level || 'beginner',
+    experienceYears: skill.experienceYears || 0,
+    availability: Array.isArray(skill.availability) ? skill.availability : []
+  };
 }
 
-// ========================================
-// EXPRESS APP SETUP
-// ========================================
-
-const app = express();
-
-// Security and CORS
-app.use(cors({
-  origin: process.env.FRONTEND_URL || "https://svai-hexart27.vercel.app",
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  credentials: true
-}));
-
-app.use(express.json({ limit: '10mb' }));
-
-// Request logging
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  next();
-});
-
-// ========================================
-// HELPER MAPPERS
-// ========================================
+function validateSkillsArray(skills) {
+  if (!Array.isArray(skills)) {
+    throw new Error('Skills must be an array');
+  }
+  return skills.map(validateSkill);
+}
 
 function mapUserRow(row) {
   return {
@@ -365,64 +306,31 @@ function mapExchangeRequestRow(row) {
   };
 }
 
-// ========================================
-// DATABASE HEALTH ROUTE
-// ========================================
+const app = express();
 
-app.get('/api/db-status', async (req, res) => {
-  const tablesStatus = {};
+app.use(cors({
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      'https://skill-vouch-hexart-2026.vercel.app',
+      'http://localhost:5173',
+      'http://localhost:3000'
+    ];
 
-  for (const tableName of requiredTables) {
-    try {
-      await query('SELECT 1 FROM ?? LIMIT 1', [tableName]);
-      tablesStatus[tableName] = true;
-    } catch (err) {
-      tablesStatus[tableName] = false;
-    }
-  }
-
-  res.json({
-    connected: dbConnected,
-    uptime: process.uptime(),
-    tables: tablesStatus
-  });
-});
-
-// ========================================
-// USER ENDPOINTS
-// ========================================
-
-app.post('/api/users', async (req, res) => {
-  try {
-    const { id, name, email, password, bio, skillsKnown, skillsToLearn, discordLink } = req.body;
-
-    if (!id || !name || !email) {
-      return res.status(400).json({ error: 'ID, name, and email are required' });
-    }
-
-    const skillsKnownJson = safeStringifyJSON(skillsKnown || []);
-    const skillsToLearnJson = safeStringifyJSON(skillsToLearn || []);
-
-    await query(
-      'INSERT INTO users (id, name, email, password, bio, skills_known, skills_to_learn, discord_link, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, name, email, password || '', bio || '', skillsKnownJson, skillsToLearnJson, discordLink || '', 5.0]
-    );
-
-    // Verify the insert
-    const insertedUsers = await query('SELECT * FROM users WHERE id = ?', [id]);
-    if (insertedUsers.length === 0) {
-      throw new Error('User insertion failed - record not found after insert');
-    }
-
-    res.status(201).json(mapUserRow(insertedUsers[0]));
-  } catch (err) {
-    console.error('POST /api/users error:', err.message);
-    if (err.code === 'ER_DUP_ENTRY') {
-      res.status(409).json({ error: 'Email already exists' });
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
     } else {
-      res.status(500).json({ error: 'Failed to create user' });
+      callback(new Error('Not allowed by CORS'));
     }
-  }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}));
+
+app.use(express.json({ limit: '10mb' }));
+
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
 });
 
 app.get('/api/users', async (req, res) => {
@@ -439,11 +347,9 @@ app.get('/api/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const users = await query('SELECT * FROM users WHERE id = ?', [id]);
-
     if (users.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
-
     res.json(mapUserRow(users[0]));
   } catch (err) {
     console.error('GET /api/users/:id error:', err.message);
@@ -454,58 +360,107 @@ app.get('/api/users/:id', async (req, res) => {
 app.put('/api/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, bio, skillsKnown, skillsToLearn, discordLink, password } = req.body;
+    const { name, bio, skillsKnown, skillsToLearn, discordLink, password, email } = req.body;
 
-    // Check if user exists
     const existingUsers = await query('SELECT * FROM users WHERE id = ?', [id]);
     if (existingUsers.length === 0) {
-      // Create user if not exists
-      const userData = {
-        id,
-        name: name || '',
-        email: req.body.email || '',
-        password: password || '',
-        bio: bio || '',
-        skillsKnown: skillsKnown || [],
-        skillsToLearn: skillsToLearn || [],
-        discordLink: discordLink || ''
-      };
-      return app._router.handle({ method: 'POST', url: '/api/users', body: userData }, {
-        status: (code) => ({ json: (data) => res.status(code).json(data) })
-      }, () => {});
+      const validatedSkillsKnown = skillsKnown ? validateSkillsArray(skillsKnown) : [];
+      const validatedSkillsToLearn = skillsToLearn ? validateSkillsArray(skillsToLearn) : [];
+
+      await query(
+        `INSERT INTO users (id, name, email, password, bio, skills_known, skills_to_learn, discord_link, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, name || '', email || '', password || '', bio || '', JSON.stringify(validatedSkillsKnown), JSON.stringify(validatedSkillsToLearn), discordLink || '', 5.0]
+      );
+    } else {
+      const existingUser = existingUsers[0];
+
+      let finalSkillsKnown = safeParseJSON(existingUser.skills_known, []);
+      let finalSkillsToLearn = safeParseJSON(existingUser.skills_to_learn, []);
+
+      if (skillsKnown !== undefined) {
+        finalSkillsKnown = validateSkillsArray(skillsKnown);
+      }
+      if (skillsToLearn !== undefined) {
+        finalSkillsToLearn = validateSkillsArray(skillsToLearn);
+      }
+
+      const skillsKnownJson = JSON.stringify(finalSkillsKnown);
+      const skillsToLearnJson = JSON.stringify(finalSkillsToLearn);
+
+      const updateFields = ['name = ?', 'bio = ?', 'skills_known = ?', 'skills_to_learn = ?', 'discord_link = ?'];
+      const updateValues = [
+        name !== undefined ? name : existingUser.name,
+        bio !== undefined ? bio : existingUser.bio,
+        skillsKnownJson,
+        skillsToLearnJson,
+        discordLink !== undefined ? discordLink : existingUser.discord_link
+      ];
+
+      if (password !== undefined) {
+        updateFields.push('password = ?');
+        updateValues.push(password);
+      }
+
+      updateFields.push('WHERE id = ?');
+      updateValues.push(id);
+
+      await query(`UPDATE users SET ${updateFields.join(', ')}`, updateValues);
     }
 
-    // Preserve existing skills if not provided
-    const existingUser = existingUsers[0];
-    const finalSkillsKnown = skillsKnown !== undefined ? skillsKnown : safeParseJSON(existingUser.skills_known, []);
-    const finalSkillsToLearn = skillsToLearn !== undefined ? skillsToLearn : safeParseJSON(existingUser.skills_to_learn, []);
-
-    const skillsKnownJson = safeStringifyJSON(finalSkillsKnown);
-    const skillsToLearnJson = safeStringifyJSON(finalSkillsToLearn);
-
-    const updateFields = ['name = ?', 'bio = ?', 'skills_known = ?', 'skills_to_learn = ?', 'discord_link = ?'];
-    const updateValues = [name || existingUser.name, bio || existingUser.bio, skillsKnownJson, skillsToLearnJson, discordLink || existingUser.discord_link];
-
-    if (password !== undefined) {
-      updateFields.push('password = ?');
-      updateValues.push(password);
-    }
-
-    updateFields.push('WHERE id = ?');
-    updateValues.push(id);
-
-    await query(`UPDATE users SET ${updateFields.join(', ')}`, updateValues);
-
-    // Verify the update
     const updatedUsers = await query('SELECT * FROM users WHERE id = ?', [id]);
     if (updatedUsers.length === 0) {
-      throw new Error('User update failed - record not found after update');
+      console.error('PUT /api/users/:id DB write failed: User not found after update');
+      return res.status(500).json({ error: 'User update failed - user not found after update' });
     }
 
     res.json(mapUserRow(updatedUsers[0]));
   } catch (err) {
-    console.error('PUT /api/users/:id error:', err.message);
-    res.status(500).json({ error: 'Failed to update user' });
+    if (err.message.includes('Skill') || err.message.includes('skills')) {
+      res.status(400).json({ error: 'Invalid skills format: ' + err.message });
+    } else {
+      console.error('PUT /api/users/:id DB write failed:', err.message);
+      res.status(500).json({ error: 'Failed to update user' });
+    }
+  }
+});
+
+app.post('/api/users', async (req, res) => {
+  try {
+    const { id, name, email, password, bio, skillsKnown, skillsToLearn, discordLink } = req.body;
+
+    if (!id || !name || !email) {
+      return res.status(400).json({ error: 'ID, name, and email are required' });
+    }
+
+    let validatedSkillsKnown = [];
+    let validatedSkillsToLearn = [];
+
+    if (skillsKnown) {
+      validatedSkillsKnown = validateSkillsArray(skillsKnown);
+    }
+    if (skillsToLearn) {
+      validatedSkillsToLearn = validateSkillsArray(skillsToLearn);
+    }
+
+    const skillsKnownJson = JSON.stringify(validatedSkillsKnown);
+    const skillsToLearnJson = JSON.stringify(validatedSkillsToLearn);
+
+    await query(
+      `INSERT INTO users (id, name, email, password, bio, skills_known, skills_to_learn, discord_link, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, name, email, password || '', bio || '', skillsKnownJson, skillsToLearnJson, discordLink || '', 5.0]
+    );
+
+    const newUsers = await query('SELECT * FROM users WHERE id = ?', [id]);
+    res.status(201).json(mapUserRow(newUsers[0]));
+  } catch (err) {
+    if (err.message.includes('Skill') || err.message.includes('skills')) {
+      res.status(400).json({ error: 'Invalid skills format: ' + err.message });
+    } else if (err.code === 'ER_DUP_ENTRY') {
+      res.status(409).json({ error: 'User already exists' });
+    } else {
+      console.error('POST /api/users DB write failed:', err.message);
+      res.status(500).json({ error: 'Failed to create user' });
+    }
   }
 });
 
@@ -525,7 +480,6 @@ app.post('/api/login', async (req, res) => {
 
     const user = users[0];
 
-    // Simple password check (in production, use hashing)
     if (user.password !== password) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -540,21 +494,179 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// ========================================
-// MESSAGE ENDPOINTS
-// ========================================
-
-app.get('/api/messages/:userId', async (req, res) => {
+app.get('/api/requests', async (req, res) => {
   try {
-    const { userId } = req.params;
-    const messages = await query(
-      'SELECT * FROM messages WHERE sender_id = ? OR receiver_id = ? ORDER BY timestamp DESC',
+    const { userId } = req.query;
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    const requests = await query(
+      'SELECT * FROM exchange_requests WHERE requester_id = ? OR target_id = ? ORDER BY created_at DESC',
       [userId, userId]
     );
+
+    res.json(requests.map(mapExchangeRequestRow));
+  } catch (err) {
+    console.error('GET /api/requests error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch requests' });
+  }
+});
+
+app.post('/api/requests', async (req, res) => {
+  try {
+    const { requesterId, targetId, skillToTeach, skillToLearn, message } = req.body;
+
+    if (!requesterId || !targetId || !skillToTeach || !skillToLearn) {
+      return res.status(400).json({ error: 'Requester ID, target ID, skill to teach, and skill to learn are required' });
+    }
+
+    const id = crypto.randomUUID();
+
+    await query(
+      'INSERT INTO exchange_requests (id, requester_id, target_id, skill_to_teach, skill_to_learn, message) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, requesterId, targetId, skillToTeach, skillToLearn, message || '']
+    );
+
+    const insertedRequests = await query('SELECT * FROM exchange_requests WHERE id = ?', [id]);
+    res.status(201).json(mapExchangeRequestRow(insertedRequests[0]));
+  } catch (err) {
+    console.error('POST /api/requests error:', err.message);
+    res.status(500).json({ error: 'Failed to create exchange request' });
+  }
+});
+
+app.put('/api/requests/:id/status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!['pending', 'accepted', 'declined', 'completed'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    await query('UPDATE exchange_requests SET status = ? WHERE id = ?', [status, id]);
+
+    const updatedRequests = await query('SELECT * FROM exchange_requests WHERE id = ?', [id]);
+    if (updatedRequests.length === 0) {
+      throw new Error('Exchange request update failed');
+    }
+
+    res.json(mapExchangeRequestRow(updatedRequests[0]));
+  } catch (err) {
+    console.error('PUT /api/requests/:id/status error:', err.message);
+    res.status(500).json({ error: 'Failed to update exchange request' });
+  }
+});
+
+app.post('/api/feedback', async (req, res) => {
+  try {
+    const { exchangeRequestId, fromUserId, toUserId, rating, comment } = req.body;
+
+    if (!exchangeRequestId || !fromUserId || !toUserId || rating === undefined) {
+      return res.status(400).json({ error: 'Exchange request ID, from user ID, to user ID, and rating are required' });
+    }
+
+    const id = crypto.randomUUID();
+
+    await query(
+      'INSERT INTO exchange_feedback (id, exchange_request_id, from_user_id, to_user_id, rating, comment) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, exchangeRequestId, fromUserId, toUserId, rating, comment || '']
+    );
+
+    const insertedFeedback = await query('SELECT * FROM exchange_feedback WHERE id = ?', [id]);
+    res.status(201).json(insertedFeedback[0]);
+  } catch (err) {
+    console.error('POST /api/feedback error:', err.message);
+    res.status(500).json({ error: 'Failed to submit feedback' });
+  }
+});
+
+app.get('/api/feedback/received', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    const feedback = await query(
+      'SELECT * FROM exchange_feedback WHERE to_user_id = ? ORDER BY created_at DESC',
+      [userId]
+    );
+
+    res.json(feedback);
+  } catch (err) {
+    console.error('GET /api/feedback/received error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch received feedback' });
+  }
+});
+
+app.get('/api/feedback/stats', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    const result = await query(
+      'SELECT COUNT(*) as count, AVG(rating) as avgRating FROM exchange_feedback WHERE to_user_id = ?',
+      [userId]
+    );
+
+    res.json({
+      avgStars: parseFloat(result[0].avgRating || 0),
+      count: result[0].count || 0
+    });
+  } catch (err) {
+    console.error('GET /api/feedback/stats error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch feedback stats' });
+  }
+});
+
+app.post('/api/messages', async (req, res) => {
+  try {
+    const { senderId, receiverId, content } = req.body;
+
+    if (!senderId || !receiverId || !content) {
+      return res.status(400).json({ error: 'Sender ID, receiver ID, and content are required' });
+    }
+
+    const timestamp = Date.now();
+    const id = crypto.randomUUID();
+
+    await query(
+      'INSERT INTO messages (id, sender_id, receiver_id, content, timestamp) VALUES (?, ?, ?, ?, ?)',
+      [id, senderId, receiverId, content, timestamp]
+    );
+
+    const insertedMessages = await query('SELECT * FROM messages WHERE id = ?', [id]);
+    if (insertedMessages.length === 0) {
+      throw new Error('Message insertion failed');
+    }
+
+    res.status(201).json(mapMessageRow(insertedMessages[0]));
+  } catch (err) {
+    console.error('POST /api/messages error:', err.message);
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+app.get('/api/messages/conversation', async (req, res) => {
+  try {
+    const { user1Id, user2Id } = req.query;
+    if (!user1Id || !user2Id) {
+      return res.status(400).json({ error: 'Both user IDs are required' });
+    }
+
+    const messages = await query(
+      'SELECT * FROM messages WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?) ORDER BY timestamp ASC',
+      [user1Id, user2Id, user2Id, user1Id]
+    );
+
     res.json(messages.map(mapMessageRow));
   } catch (err) {
-    console.error('GET /api/messages error:', err.message);
-    res.status(500).json({ error: 'Failed to fetch messages' });
+    console.error('GET /api/messages/conversation error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch conversation' });
   }
 });
 
@@ -577,38 +689,24 @@ app.get('/api/messages/unread-count', async (req, res) => {
   }
 });
 
-app.post('/api/messages', async (req, res) => {
+app.post('/api/messages/mark-as-read', async (req, res) => {
   try {
-    const { senderId, receiverId, content } = req.body;
-
-    if (!senderId || !receiverId || !content) {
-      return res.status(400).json({ error: 'Sender ID, receiver ID, and content are required' });
+    const { userId, senderId } = req.body;
+    if (!userId || !senderId) {
+      return res.status(400).json({ error: 'User ID and sender ID are required' });
     }
-
-    const timestamp = Date.now();
-    const id = crypto.randomUUID();
 
     await query(
-      'INSERT INTO messages (id, sender_id, receiver_id, content, timestamp) VALUES (?, ?, ?, ?, ?)',
-      [id, senderId, receiverId, content, timestamp]
+      'UPDATE messages SET read = TRUE WHERE receiver_id = ? AND sender_id = ? AND read = FALSE',
+      [userId, senderId]
     );
 
-    // Verify the insert
-    const insertedMessages = await query('SELECT * FROM messages WHERE id = ?', [id]);
-    if (insertedMessages.length === 0) {
-      throw new Error('Message insertion failed');
-    }
-
-    res.status(201).json(mapMessageRow(insertedMessages[0]));
+    res.json({ success: true });
   } catch (err) {
-    console.error('POST /api/messages error:', err.message);
-    res.status(500).json({ error: 'Failed to send message' });
+    console.error('POST /api/messages/mark-as-read error:', err.message);
+    res.status(500).json({ error: 'Failed to mark messages as read' });
   }
 });
-
-// ========================================
-// CONVERSATIONS ENDPOINT
-// ========================================
 
 app.get('/api/conversations', async (req, res) => {
   try {
@@ -617,7 +715,6 @@ app.get('/api/conversations', async (req, res) => {
       return res.status(400).json({ error: 'User ID is required' });
     }
 
-    // Get all unique conversation partners for this user
     const conversations = await query(`
       SELECT DISTINCT
         CASE
@@ -635,7 +732,6 @@ app.get('/api/conversations', async (req, res) => {
       ORDER BY lastMessageTime DESC
     `, [userId, userId, userId, userId, userId]);
 
-    // Get the last message for each conversation
     const conversationsWithLastMessage = await Promise.all(
       conversations.map(async (conv) => {
         const lastMessage = await query(`
@@ -668,104 +764,37 @@ app.get('/api/conversations', async (req, res) => {
   }
 });
 
-// ========================================
-// EXCHANGE REQUEST ENDPOINTS
-// ========================================
-
-app.post('/api/exchange-requests', async (req, res) => {
+app.post('/api/quizzes/generate', async (req, res) => {
   try {
-    const { requesterId, targetId, skillToTeach, skillToLearn, message } = req.body;
+    const { skill, difficulty } = req.body;
 
-    if (!requesterId || !targetId || !skillToTeach || !skillToLearn) {
-      return res.status(400).json({ error: 'Requester ID, target ID, skill to teach, and skill to learn are required' });
+    if (!skill || typeof skill !== 'string') {
+      return res.status(400).json({ error: 'Skill parameter must be a non-empty string' });
+    }
+    if (!difficulty || typeof difficulty !== 'string') {
+      return res.status(400).json({ error: 'Difficulty parameter must be a non-empty string' });
     }
 
-    const id = crypto.randomUUID();
+    const trimmedSkill = skill.trim();
+    if (!trimmedSkill) {
+      return res.status(400).json({ error: 'Skill parameter cannot be empty after trimming' });
+    }
 
-    await transaction(async (connection) => {
-      // Insert exchange request
-      await connection.execute(
-        'INSERT INTO exchange_requests (id, requester_id, target_id, skill_to_teach, skill_to_learn, message) VALUES (?, ?, ?, ?, ?, ?)',
-        [id, requesterId, targetId, skillToTeach, skillToLearn, message || '']
-      );
+    const { generateQuiz } = await import('./ai/mistralQuiz.js');
+    const result = await generateQuiz(trimmedSkill, difficulty);
 
-      // Verify the insert
-      const [insertedRequests] = await connection.execute('SELECT * FROM exchange_requests WHERE id = ?', [id]);
-      if (insertedRequests.length === 0) {
-        throw new Error('Exchange request insertion failed');
-      }
-
-      return insertedRequests[0];
+    res.json(result);
+  } catch (err) {
+    console.error('POST /api/quizzes/generate error:', err.message);
+    res.status(500).json({
+      success: false,
+      message: "AI service unavailable",
+      error: err.message
     });
-
-    const insertedRequests = await query('SELECT * FROM exchange_requests WHERE id = ?', [id]);
-    res.status(201).json(mapExchangeRequestRow(insertedRequests[0]));
-  } catch (err) {
-    console.error('POST /api/exchange-requests error:', err.message);
-    if (err.message.includes('insertion failed')) {
-      res.status(500).json({ error: 'Failed to create exchange request' });
-    } else {
-      res.status(500).json({ error: 'Failed to create exchange request' });
-    }
   }
 });
 
-app.get('/api/exchange-requests/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const requests = await query(
-      'SELECT * FROM exchange_requests WHERE requester_id = ? OR target_id = ? ORDER BY created_at DESC',
-      [userId, userId]
-    );
-    res.json(requests.map(mapExchangeRequestRow));
-  } catch (err) {
-    console.error('GET /api/exchange-requests error:', err.message);
-    res.status(500).json({ error: 'Failed to fetch exchange requests' });
-  }
-});
-
-app.put('/api/exchange-requests/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-
-    if (!['pending', 'accepted', 'declined', 'completed'].includes(status)) {
-      return res.status(400).json({ error: 'Invalid status' });
-    }
-
-    await query('UPDATE exchange_requests SET status = ? WHERE id = ?', [status, id]);
-
-    // Verify the update
-    const updatedRequests = await query('SELECT * FROM exchange_requests WHERE id = ?', [id]);
-    if (updatedRequests.length === 0) {
-      throw new Error('Exchange request update failed');
-    }
-
-    res.json(mapExchangeRequestRow(updatedRequests[0]));
-  } catch (err) {
-    console.error('PUT /api/exchange-requests error:', err.message);
-    res.status(500).json({ error: 'Failed to update exchange request' });
-  }
-});
-
-// ========================================
-// QUIZ ENDPOINTS
-// ========================================
-
-app.get('/api/quizzes', async (req, res) => {
-  try {
-    const quizzes = await query('SELECT * FROM quizzes ORDER BY created_at DESC');
-    res.json(quizzes.map(quiz => ({
-      ...quiz,
-      questions: safeParseJSON(quiz.questions, [])
-    })));
-  } catch (err) {
-    console.error('GET /api/quizzes error:', err.message);
-    res.status(500).json({ error: 'Failed to fetch quizzes' });
-  }
-});
-
-app.post('/api/quiz-attempts', async (req, res) => {
+app.post('/api/quizzes/submit', async (req, res) => {
   try {
     const { userId, quizId, answers } = req.body;
 
@@ -774,47 +803,34 @@ app.post('/api/quiz-attempts', async (req, res) => {
     }
 
     const id = crypto.randomUUID();
-    const answersJson = safeStringifyJSON(answers);
+    const answersJson = JSON.stringify(answers);
 
-    await transaction(async (connection) => {
-      // Insert quiz attempt
-      await connection.execute(
-        'INSERT INTO quiz_attempts (id, user_id, quiz_id, answers, completed) VALUES (?, ?, ?, ?, ?)',
-        [id, userId, quizId, answersJson, true]
-      );
+    await query(
+      'INSERT INTO quiz_attempts (id, user_id, quiz_id, answers, completed) VALUES (?, ?, ?, ?, ?)',
+      [id, userId, quizId, answersJson, true]
+    );
 
-      // Calculate score (simple implementation)
-      const [quizResult] = await connection.execute('SELECT questions FROM quizzes WHERE id = ?', [quizId]);
-      if (quizResult.length === 0) {
-        throw new Error('Quiz not found');
+    const quizResult = await query('SELECT questions FROM quizzes WHERE id = ?', [quizId]);
+    if (quizResult.length === 0) {
+      throw new Error('Quiz not found');
+    }
+
+    const questions = safeParseJSON(quizResult[0].questions, []);
+    let correct = 0;
+    let total = questions.length;
+
+    for (let i = 0; i < questions.length; i++) {
+      if (answers[i] === questions[i].correctAnswerIndex) {
+        correct++;
       }
+    }
 
-      const questions = safeParseJSON(quizResult[0].questions, []);
-      let correct = 0;
-      let total = questions.length;
+    const score = total > 0 ? (correct / total) * 100 : 0;
 
-      for (let i = 0; i < questions.length; i++) {
-        if (answers[i] === questions[i].correctAnswer) {
-          correct++;
-        }
-      }
-
-      const score = total > 0 ? (correct / total) * 100 : 0;
-
-      // Update score
-      await connection.execute(
-        'UPDATE quiz_attempts SET score = ?, completed_at = NOW() WHERE id = ?',
-        [score, id]
-      );
-
-      // Verify the insert
-      const [insertedAttempts] = await connection.execute('SELECT * FROM quiz_attempts WHERE id = ?', [id]);
-      if (insertedAttempts.length === 0) {
-        throw new Error('Quiz attempt insertion failed');
-      }
-
-      return insertedAttempts[0];
-    });
+    await query(
+      'UPDATE quiz_attempts SET score = ?, completed_at = NOW() WHERE id = ?',
+      [score, id]
+    );
 
     const insertedAttempts = await query('SELECT * FROM quiz_attempts WHERE id = ?', [id]);
     const attempt = insertedAttempts[0];
@@ -824,23 +840,23 @@ app.post('/api/quiz-attempts', async (req, res) => {
       answers: safeParseJSON(attempt.answers, [])
     });
   } catch (err) {
-    console.error('POST /api/quiz-attempts error:', err.message);
+    console.error('POST /api/quizzes/submit error:', err.message);
     res.status(500).json({ error: 'Failed to submit quiz attempt' });
   }
 });
 
-// ========================================
-// AI ENDPOINT
-// ========================================
-
-app.post('/ai', async (req, res) => {
+app.post('/api/skills/suggest', async (req, res) => {
   try {
-    // Import dynamically to avoid issues if not available
-    const { generateQuiz } = await import('./ai/mistralQuiz.js');
-    const result = await generateQuiz(req.body);
+    const { suggestSkills } = await import('./ai/mistralSkills.js');
+
+    if (!suggestSkills) {
+      throw new Error('suggestSkills function not found in mistralSkills.js');
+    }
+
+    const result = await suggestSkills(req.body);
     res.json(result);
   } catch (err) {
-    console.error('AI endpoint error:', err.message);
+    console.error('POST /api/skills/suggest error:', err.message);
     res.status(500).json({
       success: false,
       message: "AI service unavailable",
@@ -849,9 +865,71 @@ app.post('/ai', async (req, res) => {
   }
 });
 
-// ========================================
-// HEALTH CHECKS
-// ========================================
+app.post('/api/roadmap/generate', async (req, res) => {
+  try {
+    const { generateRoadmap } = await import('./ai/mistralSkills.js');
+
+    if (!generateRoadmap) {
+      throw new Error('generateRoadmap function not found in mistralSkills.js');
+    }
+
+    const result = await generateRoadmap(req.body);
+    res.json(result);
+  } catch (err) {
+    console.error('POST /api/roadmap/generate error:', err.message);
+    res.status(500).json({
+      success: false,
+      message: "AI service unavailable",
+      error: err.message
+    });
+  }
+});
+
+app.post('/api/ai', async (req, res) => {
+  try {
+    const axios = (await import('axios')).default;
+    const response = await axios.post(
+      "https://api.mistral.ai/v1/chat/completions",
+      {
+        model: process.env.MISTRAL_MODEL || "mistral-small",
+        messages: [{ role: "user", content: req.body.prompt }]
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.MISTRAL_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+    res.json(response.data);
+  } catch (err) {
+    console.error('AI endpoint error:', err.response?.data || err.message);
+    res.status(500).json({
+      success: false,
+      message: "AI service unavailable",
+      error: err.message
+    });
+  }
+});
+
+app.get('/api/db-status', async (req, res) => {
+  const tablesStatus = {};
+
+  for (const tableName of requiredTables) {
+    try {
+      await query('SELECT 1 FROM ?? LIMIT 1', [tableName]);
+      tablesStatus[tableName] = true;
+    } catch (err) {
+      tablesStatus[tableName] = false;
+    }
+  }
+
+  res.json({
+    connected: dbConnected,
+    uptime: process.uptime(),
+    tables: tablesStatus
+  });
+});
 
 app.get('/', (req, res) => {
   res.json({ status: 'OK', message: 'SkillVouch API Server Running' });
@@ -861,22 +939,15 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', uptime: process.uptime() });
 });
 
-// ========================================
-// STARTUP SEQUENCE
-// ========================================
-
 async function initializeServer() {
   console.log('\n🚀 Starting SkillVouch Backend Server...');
 
-  // 1. Check database connection
   await checkDatabaseConnection();
 
-  // 2. Create tables if they don't exist
   if (dbConnected) {
     await createTablesIfNotExist();
   }
 
-  // 3. Start the server
   const PORT = process.env.PORT || 5000;
   const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
 
@@ -894,11 +965,10 @@ async function initializeServer() {
     console.log('   GET  /api/users      - List users');
     console.log('   POST /api/login      - User login');
     console.log('   POST /api/messages   - Send message');
-    console.log('   POST /ai             - AI chat');
+    console.log('   POST /api/ai         - AI chat');
   });
 }
 
-// Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n🛑 Shutting down gracefully...');
   process.exit(0);
@@ -909,7 +979,6 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
-// Start the server
 initializeServer().catch(err => {
   console.error('❌ Failed to initialize server:', err.message);
   process.exit(1);
