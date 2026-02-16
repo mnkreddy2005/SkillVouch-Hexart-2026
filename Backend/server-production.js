@@ -54,6 +54,27 @@ pool.getConnection()
   })
 
 // User endpoints
+app.post('/api/users', async (req, res) => {
+  try {
+    const { id, name, email, password, bio, skillsKnown, skillsToLearn, discordLink } = req.body
+    
+    await query(
+      `INSERT INTO users (id, name, email, password, bio, skills_known, skills_to_learn, discord_link, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, name, email, password, bio || '', JSON.stringify(skillsKnown || []), JSON.stringify(skillsToLearn || []), discordLink || '', 5.0]
+    )
+    
+    const newUsers = await query('SELECT * FROM users WHERE id = ?', [id])
+    res.status(201).json(mapUserRow(newUsers[0]))
+  } catch (err) {
+    console.error('POST /api/users error', err)
+    if (err.code === 'ER_DUP_ENTRY') {
+      res.status(409).json({ error: 'User already exists' })
+    } else {
+      res.status(500).json({ error: 'Failed to create user' })
+    }
+  }
+})
+
 app.get('/api/users', async (req, res) => {
   try {
     const users = await query('SELECT * FROM users')
@@ -83,16 +104,27 @@ app.put('/api/users/:id', async (req, res) => {
     const { id } = req.params
     const { name, bio, skillsKnown, skillsToLearn, discordLink } = req.body
     
-    await query(
-      `UPDATE users SET name = ?, bio = ?, skills_known = ?, skills_to_learn = ?, discord_link = ? WHERE id = ?`,
-      [name, bio, JSON.stringify(skillsKnown || []), JSON.stringify(skillsToLearn || []), discordLink, id]
-    )
+    // Check if user exists first
+    const existingUsers = await query('SELECT * FROM users WHERE id = ?', [id])
+    if (existingUsers.length === 0) {
+      // If user doesn't exist, create them (for signup flow)
+      await query(
+        `INSERT INTO users (id, name, email, password, bio, skills_known, skills_to_learn, discord_link, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, name, req.body.email || '', '', bio || '', JSON.stringify(skillsKnown || []), JSON.stringify(skillsToLearn || []), discordLink || '', 5.0]
+      )
+    } else {
+      // Update existing user
+      await query(
+        `UPDATE users SET name = ?, bio = ?, skills_known = ?, skills_to_learn = ?, discord_link = ? WHERE id = ?`,
+        [name, bio, JSON.stringify(skillsKnown || []), JSON.stringify(skillsToLearn || []), discordLink, id]
+      )
+    }
     
     const updatedUsers = await query('SELECT * FROM users WHERE id = ?', [id])
     res.json(mapUserRow(updatedUsers[0]))
   } catch (err) {
     console.error('PUT /api/users/:id error', err)
-    res.status(500).json({ error: 'Failed to update user' })
+    res.status(500).json({ error: 'Failed to update/create user' })
   }
 })
 
