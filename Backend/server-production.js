@@ -21,6 +21,28 @@ const pool = mysql.createPool({
   queueLimit: 0
 })
 
+// Helper function for database queries
+async function query(sql, params = []) {
+  const [rows] = await pool.execute(sql, params)
+  return rows
+}
+
+// Helper mappers
+function mapUserRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    password: row.password,
+    avatar: row.avatar,
+    skillsKnown: row.skills_known ? JSON.parse(row.skills_known) : [],
+    skillsToLearn: row.skills_to_learn ? JSON.parse(row.skills_to_learn) : [],
+    bio: row.bio || '',
+    discordLink: row.discord_link || undefined,
+    rating: row.rating,
+  }
+}
+
 // Test MySQL connection
 pool.getConnection()
   .then(connection => {
@@ -30,6 +52,49 @@ pool.getConnection()
   .catch(err => {
     console.error('❌ MySQL connection failed:', err.message)
   })
+
+// User endpoints
+app.get('/api/users', async (req, res) => {
+  try {
+    const users = await query('SELECT * FROM users')
+    res.json(users.map(mapUserRow))
+  } catch (err) {
+    console.error('GET /api/users error', err)
+    res.status(500).json({ error: 'Failed to fetch users' })
+  }
+})
+
+app.get('/api/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params
+    const users = await query('SELECT * FROM users WHERE id = ?', [id])
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+    res.json(mapUserRow(users[0]))
+  } catch (err) {
+    console.error('GET /api/users/:id error', err)
+    res.status(500).json({ error: 'Failed to fetch user' })
+  }
+})
+
+app.put('/api/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { name, bio, skillsKnown, skillsToLearn, discordLink } = req.body
+    
+    await query(
+      `UPDATE users SET name = ?, bio = ?, skills_known = ?, skills_to_learn = ?, discord_link = ? WHERE id = ?`,
+      [name, bio, JSON.stringify(skillsKnown || []), JSON.stringify(skillsToLearn || []), discordLink, id]
+    )
+    
+    const updatedUsers = await query('SELECT * FROM users WHERE id = ?', [id])
+    res.json(mapUserRow(updatedUsers[0]))
+  } catch (err) {
+    console.error('PUT /api/users/:id error', err)
+    res.status(500).json({ error: 'Failed to update user' })
+  }
+})
 
 // Mistral AI Route
 app.post("/ai", async (req, res) => {
