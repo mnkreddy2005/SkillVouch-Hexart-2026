@@ -62,6 +62,17 @@ function mapUserRow(row) {
   }
 }
 
+function mapMessageRow(row) {
+  return {
+    id: row.id,
+    senderId: row.sender_id,
+    receiverId: row.receiver_id,
+    content: row.content,
+    timestamp: Number(row.timestamp),
+    read: !!row.read,
+  };
+}
+
 // Database connection status
 let dbConnected = false
 let dbConnectionAttempts = 0
