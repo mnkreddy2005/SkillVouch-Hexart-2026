@@ -87,43 +87,79 @@ export const apiService = {
   // --- AUTH ---
   login: async (email: string, password: string): Promise<User> => {
     await delay(100); // Reduced from 500ms
-    const users = await apiService.getUsers();
-    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
     
-    // Simple password check (In a real app, use hashing)
-    if (user && user.password === password) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Invalid email or password');
+      }
+
+      const data = await response.json();
+      const user = data.user;
+      
+      // Store the token if provided
+      if (data.token) {
+        localStorage.setItem('auth_token', data.token);
+      }
+      
       apiService.setSession(user);
       return user;
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
     }
-    throw new Error("Invalid email or password");
   },
 
   signup: async (name: string, email: string, password: string): Promise<User> => {
     await delay(200); // Reduced from 800ms
     
-    // Check if user already exists
-    const users = await apiService.getUsers();
-    if (users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
-      throw new Error("Email already exists");
+    try {
+      // Default Avatar (Initial Initials/Placeholder)
+      const avatarUrl = `https://ui-avatars.com/api/?background=6366f1&color=fff&name=${encodeURIComponent(name)}`;
+      
+      const newUser = {
+        id: generateId(),
+        name: name.trim(),
+        email: email.trim(),
+        password: password,
+        bio: '',
+        avatar: avatarUrl,
+        skillsKnown: [],
+        skillsToLearn: [],
+        rating: 5.0
+      };
+
+      const response = await fetch(`${API_BASE_URL}/users`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newUser),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 409) {
+          throw new Error('Email already exists');
+        }
+        throw new Error(errorData.error || 'Failed to create account');
+      }
+
+      const user = await response.json();
+      apiService.setSession(user);
+      return user;
+    } catch (error) {
+      console.error('Signup error:', error);
+      throw error;
     }
-
-    // Default Avatar (Initial Initials/Placeholder)
-    const avatarUrl = `https://ui-avatars.com/api/?background=6366f1&color=fff&name=${encodeURIComponent(name)}`;
-    
-    const newUser: User = {
-      id: generateId(),
-      name: name.trim(),
-      email: email.trim(),
-      password: password,
-      bio: '',
-      avatar: avatarUrl,
-      skillsKnown: [],
-      skillsToLearn: [],
-      rating: 5.0
-    };
-
-    await apiService.saveUser(newUser);
-    return newUser;
   },
 
   googleLogin: async (): Promise<User> => {
