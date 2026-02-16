@@ -1,7 +1,11 @@
 import { User, ExchangeRequest, Message, ExchangeFeedback } from '../types';
 import { suggestSkillsDirect, generateRoadmapDirect } from './mistralDirectService';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL;
+
+if (!API_URL) {
+  console.error('❌ VITE_API_URL environment variable is not configured. Please set it in your deployment environment.');
+}
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 

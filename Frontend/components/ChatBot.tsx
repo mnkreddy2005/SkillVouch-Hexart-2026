@@ -3,6 +3,12 @@ import { MessageCircle, Send, X, Bot, User } from 'lucide-react';
 import { dbService } from '../services/dbService';
 import { peerRecommendationService } from '../services/peerRecommendationService';
 
+const API_URL = import.meta.env.VITE_API_URL;
+
+if (!API_URL) {
+  console.error('❌ VITE_API_URL environment variable is not configured. Please set it in your deployment environment.');
+}
+
 interface ChatMessage {
   id: string;
   text: string;
@@ -53,7 +59,7 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onToggle }) => {
       
       try {
         // Step 1: Generate SQL query from user message
-        const sqlResponse = await fetch('/api/ai-sql-query', {
+        const sqlResponse = await fetch(`${API_URL}/api/ai-sql-query`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userMessage })
@@ -70,7 +76,7 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onToggle }) => {
         }
 
         // Step 2: Execute the generated SQL query
-        const execResponse = await fetch('/api/execute-sql', {
+        const execResponse = await fetch(`${API_URL}/api/execute-sql`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

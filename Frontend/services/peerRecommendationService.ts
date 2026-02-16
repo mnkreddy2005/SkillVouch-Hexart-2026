@@ -27,12 +27,18 @@ interface PeerRecommendationResponse {
   message: string;
 }
 
+const API_URL = import.meta.env.VITE_API_URL;
+
+if (!API_URL) {
+  console.error('❌ VITE_API_URL environment variable is not configured. Please set it in your deployment environment.');
+}
+
 export const peerRecommendationService = {
   // Get peer recommendations based on user requirements
   getPeerRecommendations: async (request: PeerRecommendationRequest): Promise<PeerRecommendationResponse> => {
     try {
       // Call the backend API for peer recommendations
-      const response = await fetch('/api/peer-recommendations', {
+      const response = await fetch(`${API_URL}/api/peer-recommendations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request)

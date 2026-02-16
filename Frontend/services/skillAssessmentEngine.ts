@@ -164,7 +164,7 @@ Generate exactly 5 high-quality, skill-specific questions.`;
     const prompt = this.generatePrompt(skillName, level);
     
     try {
-      const response = await fetch('/api/mistral/generate-quiz', {
+      const response = await fetch(`${API_URL}/api/mistral/generate-quiz`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -227,6 +227,12 @@ Generate exactly 5 high-quality, skill-specific questions.`;
              q.subSkill;
     });
   }
+}
+
+const API_URL = import.meta.env.VITE_API_URL;
+
+if (!API_URL) {
+  console.error('❌ VITE_API_URL environment variable is not configured. Please set it in your deployment environment.');
 }
 
 export const skillAssessmentEngine = new SkillAssessmentEngine();

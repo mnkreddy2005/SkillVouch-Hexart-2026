@@ -1,7 +1,14 @@
 {
   "version": 2,
-  "buildCommand": "npm run build:frontend",
+  "buildCommand": "cd Frontend && npm run build",
   "outputDirectory": "Frontend/dist",
-  "installCommand": "npm install && cd Frontend && npm install",
-  "framework": "vite"
+  "installCommand": "cd Frontend && npm install",
+  "framework": "vite",
+  "functions": {},
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/Frontend/index.html"
+    }
+  ]
 }

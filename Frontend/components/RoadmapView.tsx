@@ -1,5 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Loader2, ArrowRight, ExternalLink, BookOpen, Code, PlayCircle } from 'lucide-react';
+import { View } from '../types';
+import { generateRoadmap } from '../services/mistralService';
+
+const API_URL = import.meta.env.VITE_API_URL;
+
+if (!API_URL) {
+  console.error('❌ VITE_API_URL environment variable is not configured. Please set it in your deployment environment.');
+}
 
 interface RoadmapResponse {
   skill: string;
@@ -45,7 +53,7 @@ export const RoadmapView: React.FC = () => {
     setLoading(true);
     setRoadmapData(null);
     try {
-      const response = await fetch('/api/learning/roadmap', {
+      const response = await fetch(`${API_URL}/api/learning/roadmap`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

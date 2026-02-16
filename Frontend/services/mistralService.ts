@@ -488,7 +488,13 @@ Generate exactly 5 high-quality, skill-specific questions.`
   const prompt = domainPrompts[domain]?.[difficulty] || domainPrompts.general[difficulty];
   
   try {
-    const response = await fetch('/api/mistral/generate-quiz', {
+    const API_URL = import.meta.env.VITE_API_URL;
+
+    if (!API_URL) {
+      console.error('❌ VITE_API_URL environment variable is not configured. Please set it in your deployment environment.');
+    }
+
+    const response = await fetch(`${API_URL}/api/mistral/generate-quiz`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
@@ -539,7 +545,7 @@ Generate exactly 5 high-quality, skill-specific questions.`
 };
 
 // 1. Generate Quiz using Mistral with comprehensive skill coverage
-export const generateQuiz = async (skillName: string, difficulty: QuizDifficulty = 'expert'): Promise<QuizQuestion[]> => {
+export const generateQuiz = async (skillName: string, difficulty: string): Promise<QuizResponse> => {
   console.log(`Generating ${difficulty} quiz for skill: ${skillName}`);
   
   try {
@@ -562,7 +568,7 @@ export const generateQuiz = async (skillName: string, difficulty: QuizDifficulty
 // 2. Generate Learning Roadmap with Mistral via backend API
 export const generateRoadmap = async (skillName: string): Promise<RoadmapItem[]> => {
   try {
-    const response = await fetch('/api/roadmap/generate', {
+    const response = await fetch(`${API_URL}/api/roadmap/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ skillName })
@@ -647,7 +653,7 @@ export const generateRoadmap = async (skillName: string): Promise<RoadmapItem[]>
 // 3. Suggest Skills with Mistral via backend API - Enhanced with detailed recommendations
 export const suggestSkills = async (currentSkills: string[], currentGoals: string[] = []): Promise<{skills: string[], recommendations?: Record<string, string>, categories?: Record<string, string>}> => {
   try {
-    const response = await fetch('/api/skills/suggest', {
+    const response = await fetch(`${API_URL}/api/skills/suggest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ currentSkills, currentGoals })

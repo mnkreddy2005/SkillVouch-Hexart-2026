@@ -313,11 +313,20 @@ app.use(cors({
   origin: function (origin, callback) {
     const allowedOrigins = [
       'https://skill-vouch-hexart-2026.vercel.app',
+      'https://*.vercel.app',
       'http://localhost:5173',
-      'http://localhost:3000'
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:3002'
     ];
 
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.some(allowed => {
+      if (allowed.includes('*')) {
+        const pattern = allowed.replace('*', '.*');
+        return new RegExp(`^${pattern}$`).test(origin);
+      }
+      return allowed === origin;
+    })) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -1007,6 +1016,15 @@ app.get('/', (req, res) => {
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', uptime: process.uptime() });
+});
+
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
 
 async function initializeServer() {
