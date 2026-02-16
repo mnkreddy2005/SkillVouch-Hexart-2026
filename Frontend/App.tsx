@@ -236,22 +236,53 @@ function AppContent({
   const [authErrorState, setAuthErrorState] = useState('');
   const [isSubmittingState, setIsSubmittingState] = useState(false);
 
-  // Session Check Logic
+  // Session Check Logic - Restore from localStorage
   useEffect(() => {
     const checkSession = async () => {
-        const sessionUser = dbService.getCurrentSession();
-        if (sessionUser) {
-            // Validate against DB to get fresh data
-            const freshUser = await dbService.getUserById(sessionUser.id);
-            if (freshUser) {
-                setUserState(freshUser);
-                if (initialView === View.LANDING || initialView === View.LOGIN || initialView === View.SIGNUP) {
-                    setCurrentView(View.DASHBOARD);
+        // First try to restore from localStorage
+        const storedUser = localStorage.getItem("user");
+        const storedToken = localStorage.getItem("token");
+
+        if (storedUser && storedToken) {
+            try {
+                const userData = JSON.parse(storedUser);
+                // Validate user data exists in database
+                const freshUser = await dbService.getUserById(userData.id);
+                if (freshUser) {
+                    setUserState(freshUser);
+                    if (initialView === View.LANDING || initialView === View.LOGIN || initialView === View.SIGNUP) {
+                        setCurrentView(View.DASHBOARD);
+                    }
+                } else {
+                    // User no longer exists in database, clear localStorage
+                    localStorage.removeItem("user");
+                    localStorage.removeItem("token");
+                    setUserState(INITIAL_USER);
                 }
-            } else {
-                // Session invalid (user deleted?)
-                dbService.logout();
+            } catch (error) {
+                // Invalid localStorage data, clear it
+                console.warn('Invalid localStorage user data, clearing...');
+                localStorage.removeItem("user");
+                localStorage.removeItem("token");
                 setUserState(INITIAL_USER);
+            }
+        } else {
+            // Fallback to existing session logic
+            const sessionUser = dbService.getCurrentSession();
+            if (sessionUser) {
+                const freshUser = await dbService.getUserById(sessionUser.id);
+                if (freshUser) {
+                    setUserState(freshUser);
+                    // Store in localStorage for future use
+                    localStorage.setItem("user", JSON.stringify(freshUser));
+                    localStorage.setItem("token", "session-token-" + freshUser.id);
+                    if (initialView === View.LANDING || initialView === View.LOGIN || initialView === View.SIGNUP) {
+                        setCurrentView(View.DASHBOARD);
+                    }
+                } else {
+                    dbService.logout();
+                    setUserState(INITIAL_USER);
+                }
             }
         }
         setLoadingSessionState(false);

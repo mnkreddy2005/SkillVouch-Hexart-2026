@@ -1,7 +1,9 @@
 import { User, ExchangeRequest, Message, ExchangeFeedback } from '../types';
 import { suggestSkillsDirect, generateRoadmapDirect } from './mistralDirectService';
 
-const API_BASE_URL = '/api';
+// Use environment variable for API URL - IMPORTANT: Frontend must use backend URL from VITE_API_URL
+// Do NOT call Vercel domain directly - use Render backend URL instead
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 // Helper to simulate delay for "real" feel (reduced for better performance)
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -104,12 +106,13 @@ export const apiService = {
 
       const data = await response.json();
       const user = data.user;
-      
-      // Store the token if provided
+
+      // Store user and token in localStorage
+      localStorage.setItem("user", JSON.stringify(user));
       if (data.token) {
-        localStorage.setItem('auth_token', data.token);
+        localStorage.setItem("token", data.token);
       }
-      
+
       apiService.setSession(user);
       return user;
     } catch (error) {

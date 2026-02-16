@@ -92,24 +92,39 @@ export const Layout: React.FC<LayoutProps> = ({ currentView, onNavigate, childre
         </nav>
 
         <div className="p-4 border-t border-slate-800 space-y-2">
-           <div className="mb-2 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Settings</div>
-           <NavItem view={View.PROFILE} icon={UserCircle} label="Profile" />
-           
-           <button
-             onClick={onLogout}
-             className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-colors mt-2"
-           >
-             <LogOut className="w-5 h-5" />
-             <span className="font-medium">Sign Out</span>
-           </button>
-           
-           <div className="mt-4 px-4 flex items-center space-x-3">
-              <img src={user.avatar} alt="User" className="w-8 h-8 rounded-full border border-slate-700" />
-              <div className="flex-1 min-w-0">
-                 <p className="text-sm font-medium text-white truncate">{user.name}</p>
-                 <p className="text-xs text-slate-500 truncate">{user.email}</p>
-              </div>
-           </div>
+           <div className="mb-2 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Account</div>
+
+           {user && user.id !== 'temp' ? (
+             // Show user info and logout when authenticated
+             <>
+               <NavItem view={View.PROFILE} icon={UserCircle} label="Profile" />
+
+               <button
+                 onClick={onLogout}
+                 className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-colors mt-2"
+               >
+                 <LogOut className="w-5 h-5" />
+                 <span className="font-medium">Sign Out</span>
+               </button>
+
+               <div className="mt-4 px-4 flex items-center space-x-3">
+                  <img src={user.avatar} alt="User" className="w-8 h-8 rounded-full border border-slate-700" />
+                  <div className="flex-1 min-w-0">
+                     <p className="text-sm font-medium text-white truncate">{user.name}</p>
+                     <p className="text-xs text-slate-500 truncate">{user.email}</p>
+                  </div>
+               </div>
+             </>
+           ) : (
+             // Show login when not authenticated
+             <button
+               onClick={() => onNavigate(View.LOGIN)}
+               className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-indigo-500/10 hover:text-indigo-400 transition-colors"
+             >
+               <UserCircle className="w-5 h-5" />
+               <span className="font-medium">Login</span>
+             </button>
+           )}
         </div>
       </aside>
 
