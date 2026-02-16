@@ -111,8 +111,9 @@ export function generateUUID(): string {
 }
 
 export default function App() {
-  // Network status
+  // Network status and API availability
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [apiAvailable, setApiAvailable] = useState(true);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -120,6 +121,29 @@ export default function App() {
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+
+    // Check if API is available on startup
+    const checkApiAvailability = async () => {
+      const apiUrl = import.meta.env.VITE_API_URL;
+      if (!apiUrl || apiUrl === 'http://localhost:5000') {
+        setApiAvailable(false);
+        return;
+      }
+
+      try {
+        // Try to hit a simple health endpoint
+        const response = await fetch(`${apiUrl}/health`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(5000) // 5 second timeout
+        });
+        setApiAvailable(response.ok);
+      } catch (error) {
+        console.warn('API availability check failed:', error);
+        setApiAvailable(false);
+      }
+    };
+
+    checkApiAvailability();
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -131,6 +155,14 @@ export default function App() {
     <ErrorBoundary>
       <Suspense fallback={<LoadingFallback />}>
         <div className="min-h-screen bg-slate-950">
+          {/* API Status Indicator - Show when API is not available */}
+          {!apiAvailable && (
+            <div className="fixed top-4 left-4 z-50 bg-yellow-900/90 border border-yellow-700 text-yellow-200 px-4 py-2 rounded-lg flex items-center gap-2 shadow-lg">
+              <WifiOff className="w-4 h-4" />
+              <span className="text-sm">Backend API not configured - Limited functionality</span>
+            </div>
+          )}
+
           {/* Network Status Indicator */}
           <div className="fixed top-4 right-4 z-50">
             <NetworkStatus isOnline={isOnline} />
@@ -139,6 +171,7 @@ export default function App() {
           {/* Main App Content */}
           <AppContent
             isOnline={isOnline}
+            apiAvailable={apiAvailable}
             currentView={View.LANDING}
             setCurrentView={(view) => console.log(view)}
             user={INITIAL_USER}
@@ -236,58 +269,73 @@ function AppContent({
   const [authErrorState, setAuthErrorState] = useState('');
   const [isSubmittingState, setIsSubmittingState] = useState(false);
 
-  // Session Check Logic - Restore from localStorage
+  // Session Check Logic - Handle API failures gracefully
   useEffect(() => {
     const checkSession = async () => {
-        // First try to restore from localStorage
-        const storedUser = localStorage.getItem("user");
-        const storedToken = localStorage.getItem("token");
+        try {
+            // First try to restore from localStorage
+            const storedUser = localStorage.getItem("user");
+            const storedToken = localStorage.getItem("token");
 
-        if (storedUser && storedToken) {
-            try {
-                const userData = JSON.parse(storedUser);
-                // Validate user data exists in database
-                const freshUser = await dbService.getUserById(userData.id);
-                if (freshUser) {
-                    setUserState(freshUser);
-                    if (initialView === View.LANDING || initialView === View.LOGIN || initialView === View.SIGNUP) {
-                        setCurrentView(View.DASHBOARD);
+            if (storedUser && storedToken) {
+                try {
+                    const userData = JSON.parse(storedUser);
+                    // Only validate with backend if API is available
+                    // In Vercel, if VITE_API_URL is not set, skip validation
+                    const apiUrl = import.meta.env.VITE_API_URL;
+                    if (apiUrl && apiUrl !== 'http://localhost:5000') {
+                        try {
+                            const freshUser = await dbService.getUserById(userData.id);
+                            if (freshUser) {
+                                setUserState(freshUser);
+                                if (initialView === View.LANDING || initialView === View.LOGIN || initialView === View.SIGNUP) {
+                                    setCurrentView(View.DASHBOARD);
+                                }
+                            } else {
+                                // User no longer exists in database, clear localStorage
+                                localStorage.removeItem("user");
+                                localStorage.removeItem("token");
+                                setUserState(INITIAL_USER);
+                            }
+                        } catch (apiError) {
+                            // API call failed, but don't crash - just use stored data
+                            console.warn('API validation failed, using stored user data:', apiError);
+                            setUserState(userData);
+                            if (initialView === View.LANDING || initialView === View.LOGIN || initialView === View.SIGNUP) {
+                                setCurrentView(View.DASHBOARD);
+                            }
+                        }
+                    } else {
+                        // No API configured, use stored data
+                        setUserState(userData);
+                        if (initialView === View.LANDING || initialView === View.LOGIN || initialView === View.SIGNUP) {
+                            setCurrentView(View.DASHBOARD);
+                        }
                     }
-                } else {
-                    // User no longer exists in database, clear localStorage
+                } catch (parseError) {
+                    // Invalid localStorage data, clear it
+                    console.warn('Invalid localStorage user data, clearing...');
                     localStorage.removeItem("user");
                     localStorage.removeItem("token");
                     setUserState(INITIAL_USER);
                 }
-            } catch (error) {
-                // Invalid localStorage data, clear it
-                console.warn('Invalid localStorage user data, clearing...');
-                localStorage.removeItem("user");
-                localStorage.removeItem("token");
+            } else {
+                // No stored session, stay on landing page
                 setUserState(INITIAL_USER);
             }
-        } else {
-            // Fallback to existing session logic
-            const sessionUser = dbService.getCurrentSession();
-            if (sessionUser) {
-                const freshUser = await dbService.getUserById(sessionUser.id);
-                if (freshUser) {
-                    setUserState(freshUser);
-                    // Store in localStorage for future use
-                    localStorage.setItem("user", JSON.stringify(freshUser));
-                    localStorage.setItem("token", "session-token-" + freshUser.id);
-                    if (initialView === View.LANDING || initialView === View.LOGIN || initialView === View.SIGNUP) {
-                        setCurrentView(View.DASHBOARD);
-                    }
-                } else {
-                    dbService.logout();
-                    setUserState(INITIAL_USER);
-                }
-            }
+        } catch (error) {
+            // Any other error, just set to initial state and continue
+            console.warn('Session check failed, using default state:', error);
+            setUserState(INITIAL_USER);
+        } finally {
+            // Always set loading to false
+            setLoadingSessionState(false);
         }
-        setLoadingSessionState(false);
     };
-    checkSession();
+
+    // Add a small delay to prevent immediate API calls that might fail
+    const timer = setTimeout(checkSession, 100);
+    return () => clearTimeout(timer);
   }, [initialView]);
 
   // Poll for unread messages count
