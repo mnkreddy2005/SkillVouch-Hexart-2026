@@ -63,55 +63,58 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Load dashboard data
-    loadDashboardData();
-  }, [user]);
+    const fetchDashboardData = async () => {
+      try {
+        setLoading(true);
 
-  const loadDashboardData = async () => {
-    try {
-      // Calculate stats from user data
-      const verifiedSkillsCount = user.skillsKnown?.filter(skill => skill.verified).length || 0;
-      const activeConnections = 0; // Would come from requests API
-      const successfulExchanges = 0; // Would come from completed requests
+        // Calculate stats from user data
+        const verifiedSkillsCount = user.skillsKnown?.filter(skill => skill.verified).length || 0;
+        const activeConnections = 0; // Would come from requests API
+        const successfulExchanges = 0; // Would come from completed requests
 
-      setStats({
-        verifiedSkills: verifiedSkillsCount,
-        activeConnections,
-        successfulExchanges,
-        profileRating: 5.0
-      });
+        setStats({
+          verifiedSkills: verifiedSkillsCount,
+          activeConnections,
+          successfulExchanges,
+          profileRating: 5.0
+        });
 
-      // Mock AI recommendations (would come from API)
-      setSkillRecommendations([
-        { name: "React Advanced Patterns", reason: "Complements your React skills", confidence: 0.85 },
-        { name: "TypeScript", reason: "Enhances your JavaScript development", confidence: 0.78 },
-        { name: "Node.js", reason: "Enables full-stack development", confidence: 0.72 }
-      ]);
+        // Mock AI recommendations (would come from API)
+        setSkillRecommendations([
+          { name: "React Advanced Patterns", reason: "Complements your React skills", confidence: 0.85 },
+          { name: "TypeScript", reason: "Enhances your JavaScript development", confidence: 0.78 },
+          { name: "Node.js", reason: "Enables full-stack development", confidence: 0.72 }
+        ]);
 
-      // Mock peer suggestions (would come from API)
-      setPeerSuggestions([
-        {
-          id: "1",
-          name: "Alex Chen",
-          skillsOffered: ["Python", "Data Science"],
-          skillsNeeded: ["React", "JavaScript"],
-          matchScore: 92
-        },
-        {
-          id: "2",
-          name: "Maria Garcia",
-          skillsOffered: ["UI/UX Design", "Figma"],
-          skillsNeeded: ["HTML", "CSS"],
-          matchScore: 88
-        }
-      ]);
+        // Mock peer suggestions (would come from API)
+        setPeerSuggestions([
+          {
+            id: "1",
+            name: "Alex Chen",
+            skillsOffered: ["Python", "Data Science"],
+            skillsNeeded: ["React", "JavaScript"],
+            matchScore: 92
+          },
+          {
+            id: "2",
+            name: "Maria Garcia",
+            skillsOffered: ["UI/UX Design", "Figma"],
+            skillsNeeded: ["HTML", "CSS"],
+            matchScore: 88
+          }
+        ]);
 
-    } catch (error) {
-      console.error('Failed to load dashboard data:', error);
-    } finally {
-      setLoading(false);
+      } catch (error) {
+        console.error('Failed to load dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user?.id && user.id !== "temp") {
+      fetchDashboardData();
     }
-  };
+  }, [user]);
 
   const sidebarItems = [
     { view: View.DASHBOARD, icon: LayoutDashboard, label: "Dashboard", active: true },
