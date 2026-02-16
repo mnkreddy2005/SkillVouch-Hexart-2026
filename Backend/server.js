@@ -558,6 +558,25 @@ app.get('/api/messages/:userId', async (req, res) => {
   }
 });
 
+app.get('/api/messages/unread-count', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    const result = await query(
+      'SELECT COUNT(*) as unreadCount FROM messages WHERE receiver_id = ? AND read = FALSE',
+      [userId]
+    );
+
+    res.json({ unreadCount: result[0].unreadCount || 0 });
+  } catch (err) {
+    console.error('GET /api/messages/unread-count error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch unread count' });
+  }
+});
+
 app.post('/api/messages', async (req, res) => {
   try {
     const { senderId, receiverId, content } = req.body;
@@ -584,6 +603,68 @@ app.post('/api/messages', async (req, res) => {
   } catch (err) {
     console.error('POST /api/messages error:', err.message);
     res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// ========================================
+// CONVERSATIONS ENDPOINT
+// ========================================
+
+app.get('/api/conversations', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    // Get all unique conversation partners for this user
+    const conversations = await query(`
+      SELECT DISTINCT
+        CASE
+          WHEN sender_id = ? THEN receiver_id
+          ELSE sender_id
+        END as partnerId,
+        u.name as partnerName,
+        u.avatar as partnerAvatar,
+        MAX(m.timestamp) as lastMessageTime,
+        COUNT(CASE WHEN m.read = FALSE AND m.receiver_id = ? THEN 1 END) as unreadCount
+      FROM messages m
+      JOIN users u ON (CASE WHEN m.sender_id = ? THEN m.receiver_id ELSE m.sender_id END) = u.id
+      WHERE m.sender_id = ? OR m.receiver_id = ?
+      GROUP BY partnerId, u.name, u.avatar
+      ORDER BY lastMessageTime DESC
+    `, [userId, userId, userId, userId, userId]);
+
+    // Get the last message for each conversation
+    const conversationsWithLastMessage = await Promise.all(
+      conversations.map(async (conv) => {
+        const lastMessage = await query(`
+          SELECT content, timestamp, sender_id
+          FROM messages
+          WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+          ORDER BY timestamp DESC
+          LIMIT 1
+        `, [userId, conv.partnerId, conv.partnerId, userId]);
+
+        return {
+          partnerId: conv.partnerId,
+          partnerName: conv.partnerName,
+          partnerAvatar: conv.partnerAvatar,
+          lastMessage: lastMessage.length > 0 ? {
+            content: lastMessage[0].content,
+            timestamp: lastMessage[0].timestamp,
+            isFromUser: lastMessage[0].sender_id === userId
+          } : null,
+          unreadCount: conv.unreadCount,
+          lastMessageTime: conv.lastMessageTime
+        };
+      })
+    );
+
+    res.json(conversationsWithLastMessage);
+  } catch (err) {
+    console.error('GET /api/conversations error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch conversations' });
   }
 });
 
