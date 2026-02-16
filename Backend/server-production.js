@@ -272,6 +272,109 @@ app.post('/api/messages', async (req, res) => {
   }
 });
 
+// Conversations endpoint
+app.get('/api/conversations', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    // Get all unique conversation partners for this user
+    const conversations = await query(`
+      SELECT DISTINCT
+        CASE
+          WHEN sender_id = ? THEN receiver_id
+          ELSE sender_id
+        END as partnerId,
+        u.name as partnerName,
+        u.avatar as partnerAvatar,
+        MAX(m.timestamp) as lastMessageTime,
+        COUNT(CASE WHEN m.read = FALSE AND m.receiver_id = ? THEN 1 END) as unreadCount
+      FROM messages m
+      JOIN users u ON (CASE WHEN m.sender_id = ? THEN m.receiver_id ELSE m.sender_id END) = u.id
+      WHERE m.sender_id = ? OR m.receiver_id = ?
+      GROUP BY partnerId, u.name, u.avatar
+      ORDER BY lastMessageTime DESC
+    `, [userId, userId, userId, userId, userId]);
+
+    // Get the last message for each conversation
+    const conversationsWithLastMessage = await Promise.all(
+      conversations.map(async (conv) => {
+        const lastMessage = await query(`
+          SELECT content, timestamp, sender_id
+          FROM messages
+          WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+          ORDER BY timestamp DESC
+          LIMIT 1
+        `, [userId, conv.partnerId, conv.partnerId, userId]);
+
+        return {
+          partnerId: conv.partnerId,
+          partnerName: conv.partnerName,
+          partnerAvatar: conv.partnerAvatar,
+          lastMessage: lastMessage.length > 0 ? {
+            content: lastMessage[0].content,
+            timestamp: lastMessage[0].timestamp,
+            isFromUser: lastMessage[0].sender_id === userId
+          } : null,
+          unreadCount: conv.unreadCount,
+          lastMessageTime: conv.lastMessageTime
+        };
+      })
+    );
+
+    res.json(conversationsWithLastMessage);
+  } catch (err) {
+    console.error('GET /api/conversations error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch conversations' });
+  }
+});
+
+// Skills suggestion endpoint
+app.post('/api/skills/suggest', async (req, res) => {
+  try {
+    // Import the suggestSkills function from the skills service
+    const { suggestSkills } = await import('./ai/mistralSkills.js');
+
+    if (!suggestSkills) {
+      throw new Error('suggestSkills function not found in mistralSkills.js');
+    }
+
+    const result = await suggestSkills(req.body);
+    res.json(result);
+  } catch (err) {
+    console.error('POST /api/skills/suggest error:', err.message);
+    res.status(500).json({
+      success: false,
+      message: "AI service unavailable",
+      error: err.message
+    });
+  }
+});
+
+// Quiz generation endpoint
+app.post('/api/quiz/generate', async (req, res) => {
+  try {
+    // Import the generateQuiz function from the quiz service
+    const { generateQuiz } = await import('./ai/mistralQuiz.js');
+
+    if (!generateQuiz) {
+      throw new Error('generateQuiz function not found in mistralQuiz.js');
+    }
+
+    const result = await generateQuiz(req.body);
+    res.json(result);
+  } catch (err) {
+    console.error('POST /api/quiz/generate error:', err.message);
+    res.status(500).json({
+      success: false,
+      message: "AI service unavailable",
+      error: err.message
+    });
+  }
+});
+
 // User endpoints
 app.post('/api/users', async (req, res) => {
   try {
