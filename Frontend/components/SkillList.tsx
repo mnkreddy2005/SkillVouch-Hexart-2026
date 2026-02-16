@@ -86,7 +86,13 @@ export const SkillList: React.FC<SkillListProps> = ({ user, onUpdateUser }) => {
   };
 
   const handleVerifySkill = (skill: Skill) => {
-    setQuizSkill(skill.name);
+    // Validate that skill.name is a valid string before setting
+    if (skill && skill.name && typeof skill.name === 'string' && skill.name.trim() !== '') {
+      setQuizSkill(skill.name.trim());
+    } else {
+      console.error('Invalid skill name:', skill?.name);
+      // Could show a toast notification here
+    }
   };
 
   const handleCompleteQuiz = (score: number) => {

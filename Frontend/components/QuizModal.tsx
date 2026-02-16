@@ -152,10 +152,19 @@ export const QuizModal: React.FC<QuizModalProps> = ({ skillName, onClose, onComp
   const loadQuiz = async (difficulty: 'beginner' | 'intermediate' | 'advanced') => {
     setLoading(true);
     setError(null);
-    console.log(`Loading quiz for skill: "${skillName}" with difficulty: ${difficulty}`);
-    
+
+    // Validate skillName before proceeding
+    if (!skillName || typeof skillName !== 'string' || skillName.trim() === '') {
+      setError('Invalid skill name. Please select a valid skill.');
+      setLoading(false);
+      return;
+    }
+
+    const trimmedSkillName = skillName.trim();
+    console.log(`Loading quiz for skill: "${trimmedSkillName}" with difficulty: ${difficulty}`);
+
     try {
-      const response = await apiService.generateQuiz(skillName, difficulty);
+      const response = await apiService.generateQuiz(trimmedSkillName, difficulty);
       console.log('Quiz API response:', response);
       
       const generatedQuestions = response.questions;
