@@ -348,11 +348,23 @@ export const apiService = {
   // --- ROADMAP GENERATION ---
   generateRoadmap: async (skill: string) => {
     try {
-      const roadmap = await generateRoadmapDirect(skill);
-      return { roadmap };
+      const response = await fetch('/api/roadmap/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skill })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to generate roadmap: ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('Roadmap generated successfully:', data);
+      return data;
     } catch (error) {
       console.error('Roadmap generation failed:', error);
-      throw new Error('Failed to generate roadmap');
+      throw new Error('Failed to generate roadmap. Please try again.');
     }
   }
 };

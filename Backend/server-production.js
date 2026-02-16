@@ -344,6 +344,28 @@ app.get('/api/conversations', async (req, res) => {
   }
 });
 
+// Roadmap generation endpoint
+app.post('/api/roadmap/generate', async (req, res) => {
+  try {
+    // Import the generateRoadmap function from the skills service
+    const { generateRoadmap } = await import('./ai/mistralSkills.js');
+
+    if (!generateRoadmap) {
+      throw new Error('generateRoadmap function not found in mistralSkills.js');
+    }
+
+    const result = await generateRoadmap(req.body);
+    res.json(result);
+  } catch (err) {
+    console.error('POST /api/roadmap/generate error:', err.message);
+    res.status(500).json({
+      success: false,
+      message: "AI service unavailable",
+      error: err.message
+    });
+  }
+});
+
 // Skills suggestion endpoint
 app.post('/api/skills/suggest', async (req, res) => {
   try {
