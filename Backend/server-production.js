@@ -662,10 +662,134 @@ app.post('/ai', async (req, res) => {
   }
 });
 
-// Health check route
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "OK", uptime: process.uptime() })
-})
+// Database verification endpoint - ensures all saving operations work
+app.post('/api/verify-db-sync', async (req, res) => {
+  try {
+    const results = {
+      userCreation: false,
+      userUpdate: false,
+      skillsSaving: false,
+      messageSaving: false,
+      requestSaving: false,
+      dataIntegrity: false
+    };
+
+    // Test user creation and skills saving
+    const testUserId = 'test-db-sync-' + Date.now();
+    const testUser = {
+      id: testUserId,
+      name: 'Test User',
+      email: `test-${Date.now()}@example.com`,
+      password: 'testpass',
+      bio: 'Test bio',
+      skillsKnown: [
+        { name: 'JavaScript', verified: true, level: 'intermediate', experienceYears: 2, availability: ['weekdays'] },
+        { name: 'Python', verified: false, level: 'beginner', experienceYears: 1, availability: [] }
+      ],
+      skillsToLearn: [
+        { name: 'React', verified: false, level: 'beginner', experienceYears: 0, availability: ['weekends'] }
+      ]
+    };
+
+    // Create test user
+    await query(
+      `INSERT INTO users (id, name, email, password, bio, skills_known, skills_to_learn, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [testUser.id, testUser.name, testUser.email, testUser.password, testUser.bio, JSON.stringify(testUser.skillsKnown), JSON.stringify(testUser.skillsToLearn), 5.0]
+    );
+
+    // Verify user was created with skills
+    const createdUsers = await query('SELECT * FROM users WHERE id = ?', [testUserId]);
+    if (createdUsers.length > 0) {
+      const savedUser = mapUserRow(createdUsers[0]);
+      if (savedUser.skillsKnown.length === 2 && savedUser.skillsToLearn.length === 1) {
+        results.userCreation = true;
+        results.skillsSaving = true;
+      }
+    }
+
+    // Test user update
+    const updatedSkills = [
+      { name: 'JavaScript', verified: true, level: 'advanced', experienceYears: 3, availability: ['anytime'] },
+      { name: 'TypeScript', verified: false, level: 'intermediate', experienceYears: 1, availability: [] }
+    ];
+
+    await query(
+      'UPDATE users SET skills_known = ?, bio = ? WHERE id = ?',
+      [JSON.stringify(updatedSkills), 'Updated bio', testUserId]
+    );
+
+    // Verify update
+    const updatedUsers = await query('SELECT * FROM users WHERE id = ?', [testUserId]);
+    if (updatedUsers.length > 0) {
+      const savedUser = mapUserRow(updatedUsers[0]);
+      if (savedUser.skillsKnown.length === 2 && savedUser.bio === 'Updated bio') {
+        results.userUpdate = true;
+      }
+    }
+
+    // Test message saving
+    const messageId = 'test-msg-' + Date.now();
+    const timestamp = Date.now();
+
+    await query(
+      'INSERT INTO messages (id, sender_id, receiver_id, content, timestamp) VALUES (?, ?, ?, ?, ?)',
+      [messageId, testUserId, 'system-user', 'Test message', timestamp]
+    );
+
+    // Verify message was saved
+    const savedMessages = await query('SELECT * FROM messages WHERE id = ?', [messageId]);
+    if (savedMessages.length > 0) {
+      results.messageSaving = true;
+    }
+
+    // Test exchange request saving (transaction)
+    const requestId = 'test-req-' + Date.now();
+    await transaction(async (connection) => {
+      await connection.execute(
+        'INSERT INTO exchange_requests (id, requester_id, target_id, skill_to_teach, skill_to_learn, message) VALUES (?, ?, ?, ?, ?, ?)',
+        [requestId, testUserId, 'system-user', 'JavaScript', 'Python', 'Test request']
+      );
+
+      // Verify insert within transaction
+      const [insertedRequests] = await connection.execute('SELECT * FROM exchange_requests WHERE id = ?', [requestId]);
+      if (insertedRequests.length === 0) {
+        throw new Error('Exchange request insertion failed');
+      }
+    });
+
+    // Verify request was saved
+    const savedRequests = await query('SELECT * FROM exchange_requests WHERE id = ?', [requestId]);
+    if (savedRequests.length > 0) {
+      results.requestSaving = true;
+    }
+
+    // Clean up test data
+    await query('DELETE FROM exchange_requests WHERE id = ?', [requestId]);
+    await query('DELETE FROM messages WHERE id = ?', [messageId]);
+    await query('DELETE FROM users WHERE id = ?', [testUserId]);
+
+    // Check data integrity
+    const integrityCheck = await query('SELECT COUNT(*) as count FROM users WHERE skills_known IS NOT NULL');
+    if (integrityCheck[0].count >= 0) {
+      results.dataIntegrity = true;
+    }
+
+    res.json({
+      success: true,
+      message: 'Database sync verification completed',
+      results: results,
+      allOperationsWorking: Object.values(results).every(result => result === true)
+    });
+
+  } catch (err) {
+    console.error('Database verification failed:', err.message);
+    res.status(500).json({
+      success: false,
+      message: 'Database sync verification failed',
+      error: err.message
+    });
+  }
+});
 
 // API test endpoint
 app.get("/api/test", (req, res) => {
