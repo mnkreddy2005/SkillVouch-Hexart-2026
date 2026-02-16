@@ -49,7 +49,13 @@ const setCachedQuiz = (skill, difficulty, count, questions) => {
 
 // Enhanced skill domain detection
 const detectSkillDomain = (skillName) => {
-  const lowerSkill = skillName.toLowerCase();
+  // Validate that skillName is a string
+  if (!skillName || typeof skillName !== 'string') {
+    console.warn('detectSkillDomain received invalid skillName:', skillName);
+    return 'general'; // Default fallback
+  }
+
+  const lowerSkill = skillName.toLowerCase().trim();
   
   // Exact matching first - prioritize specific skill names over partial matches
   const exactMatches = {
@@ -296,8 +302,26 @@ export const generateQuiz = async (
   count = 10
 ) => {
   const startTime = Date.now();
-  
+
   try {
+    // Validate input parameters
+    if (!skill || typeof skill !== 'string') {
+      throw new Error('Skill parameter must be a non-empty string');
+    }
+    if (!difficulty || typeof difficulty !== 'string') {
+      throw new Error('Difficulty parameter must be a non-empty string');
+    }
+    if (!Number.isInteger(count) || count < 1 || count > 50) {
+      throw new Error('Count parameter must be an integer between 1 and 50');
+    }
+
+    const trimmedSkill = skill.trim();
+    if (!trimmedSkill) {
+      throw new Error('Skill parameter cannot be empty after trimming');
+    }
+
+    console.log(`Generating quiz for skill: "${trimmedSkill}", difficulty: ${difficulty}, count: ${count}`);
+
     // Use the skill assessment engine for all requests
     if (count === 10 && ['beginner', 'intermediate', 'advanced', 'expert'].includes(difficulty)) {
       console.log(`Using skill assessment engine for ${skill} (${difficulty})`);
