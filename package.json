@@ -7,9 +7,13 @@
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:frontend": "cd Frontend && vite",
     "dev:backend": "cd Backend && node server.js",
-    "build": "cd Frontend && vite build",
+    "build": "cd Frontend && npm install && npx vite build",
+    "build:frontend": "cd Frontend && npm install && npx vite build",
+    "build:backend": "cd Backend && npm install",
+    "build:render": "npm run build:frontend && npm run build:backend",
     "preview": "cd Frontend && vite preview",
-    "start": "cd Backend && node server.js"
+    "start": "cd Backend && node server.js",
+    "install:all": "npm install && cd Frontend && npm install && cd ../Backend && npm install"
   },
   "dependencies": {
     "@langchain/core": "^1.1.8",
