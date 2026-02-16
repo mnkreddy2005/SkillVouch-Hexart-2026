@@ -60,7 +60,7 @@ app.post('/api/users', async (req, res) => {
     
     await query(
       `INSERT INTO users (id, name, email, password, bio, skills_known, skills_to_learn, discord_link, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, name, email, password, bio || '', JSON.stringify(skillsKnown || []), JSON.stringify(skillsToLearn || []), discordLink || '', 5.0]
+      [id, name, email, password || '', bio || '', JSON.stringify(skillsKnown || []), JSON.stringify(skillsToLearn || []), discordLink || '', 5.0]
     )
     
     const newUsers = await query('SELECT * FROM users WHERE id = ?', [id])
@@ -72,6 +72,40 @@ app.post('/api/users', async (req, res) => {
     } else {
       res.status(500).json({ error: 'Failed to create user' })
     }
+  }
+})
+
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, password } = req.body
+    
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' })
+    }
+    
+    const users = await query('SELECT * FROM users WHERE email = ?', [email])
+    
+    if (users.length === 0) {
+      return res.status(401).json({ error: 'Invalid email or password' })
+    }
+    
+    const user = users[0]
+    
+    // For now, accept any password if user exists
+    // In production, you'd hash and verify passwords properly
+    if (!user.password && password) {
+      // Update user with password if they don't have one
+      await query('UPDATE users SET password = ? WHERE id = ?', [password, user.id])
+      user.password = password
+    }
+    
+    res.json({
+      user: mapUserRow(user),
+      token: 'simple-token-' + user.id // Simple token for now
+    })
+  } catch (err) {
+    console.error('POST /api/login error', err)
+    res.status(500).json({ error: 'Login failed' })
   }
 })
 
@@ -102,7 +136,7 @@ app.get('/api/users/:id', async (req, res) => {
 app.put('/api/users/:id', async (req, res) => {
   try {
     const { id } = req.params
-    const { name, bio, skillsKnown, skillsToLearn, discordLink } = req.body
+    const { name, bio, skillsKnown, skillsToLearn, discordLink, password } = req.body
     
     // Check if user exists first
     const existingUsers = await query('SELECT * FROM users WHERE id = ?', [id])
@@ -110,14 +144,22 @@ app.put('/api/users/:id', async (req, res) => {
       // If user doesn't exist, create them (for signup flow)
       await query(
         `INSERT INTO users (id, name, email, password, bio, skills_known, skills_to_learn, discord_link, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, name, req.body.email || '', '', bio || '', JSON.stringify(skillsKnown || []), JSON.stringify(skillsToLearn || []), discordLink || '', 5.0]
+        [id, name, req.body.email || '', password || '', bio || '', JSON.stringify(skillsKnown || []), JSON.stringify(skillsToLearn || []), discordLink || '', 5.0]
       )
     } else {
       // Update existing user
-      await query(
-        `UPDATE users SET name = ?, bio = ?, skills_known = ?, skills_to_learn = ?, discord_link = ? WHERE id = ?`,
-        [name, bio, JSON.stringify(skillsKnown || []), JSON.stringify(skillsToLearn || []), discordLink, id]
-      )
+      const updateFields = ['name = ?', 'bio = ?', 'skills_known = ?', 'skills_to_learn = ?', 'discord_link = ?']
+      const updateValues = [name, bio, JSON.stringify(skillsKnown || []), JSON.stringify(skillsToLearn || []), discordLink]
+      
+      if (password) {
+        updateFields.push('password = ?')
+        updateValues.push(password)
+      }
+      
+      updateFields.push('WHERE id = ?')
+      updateValues.push(id)
+      
+      await query(`UPDATE users SET ${updateFields.join(' ')}`, updateValues)
     }
     
     const updatedUsers = await query('SELECT * FROM users WHERE id = ?', [id])
