@@ -3,6 +3,7 @@ import cors from 'cors';
 import mysql from 'mysql2/promise';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
+import { ChatMistralAI } from '@langchain/mistralai';
 
 dotenv.config();
 
@@ -764,6 +765,12 @@ app.get('/api/conversations', async (req, res) => {
   }
 });
 
+const mistral = new ChatMistralAI({
+  model: process.env.MISTRAL_MODEL || 'mistral-large-latest',
+  temperature: 0.3,
+  apiKey: process.env.MISTRAL_API_KEY,
+});
+
 app.post('/api/quizzes/generate', async (req, res) => {
   try {
     const { skill, difficulty } = req.body;
@@ -780,10 +787,33 @@ app.post('/api/quizzes/generate', async (req, res) => {
       return res.status(400).json({ error: 'Skill parameter cannot be empty after trimming' });
     }
 
-    const { generateQuiz } = await import('./ai/mistralQuiz.js');
-    const result = await generateQuiz(trimmedSkill, difficulty);
+    const prompt = `Generate a quiz about ${trimmedSkill} at ${difficulty} level. Create 5 multiple choice questions with 4 options each. Return the response as JSON with this exact format:
+{
+  "title": "Quiz Title",
+  "description": "Brief description",
+  "questions": [
+    {
+      "question": "Question text?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctAnswerIndex": 0
+    }
+  ]
+}`;
 
-    res.json(result);
+    const response = await mistral.invoke(prompt);
+    const content = response.content;
+
+    try {
+      const quizData = JSON.parse(content);
+      res.json(quizData);
+    } catch (parseError) {
+      console.error('Failed to parse Mistral response as JSON:', content);
+      res.status(500).json({
+        success: false,
+        message: "AI service returned invalid format",
+        error: parseError.message
+      });
+    }
   } catch (err) {
     console.error('POST /api/quizzes/generate error:', err.message);
     res.status(500).json({
@@ -847,14 +877,30 @@ app.post('/api/quizzes/submit', async (req, res) => {
 
 app.post('/api/skills/suggest', async (req, res) => {
   try {
-    const { suggestSkills } = await import('./ai/mistralSkills.js');
+    const { currentSkills, currentGoals } = req.body;
 
-    if (!suggestSkills) {
-      throw new Error('suggestSkills function not found in mistralSkills.js');
+    const prompt = `Based on current skills: ${JSON.stringify(currentSkills || [])}
+And learning goals: ${JSON.stringify(currentGoals || [])}
+
+Suggest 5 new skills that would complement these. Return as JSON:
+{
+  "skills": ["Skill 1", "Skill 2", "Skill 3", "Skill 4", "Skill 5"]
+}`;
+
+    const response = await mistral.invoke(prompt);
+    const content = response.content;
+
+    try {
+      const suggestions = JSON.parse(content);
+      res.json(suggestions);
+    } catch (parseError) {
+      console.error('Failed to parse Mistral response as JSON:', content);
+      res.status(500).json({
+        success: false,
+        message: "AI service returned invalid format",
+        error: parseError.message
+      });
     }
-
-    const result = await suggestSkills(req.body);
-    res.json(result);
   } catch (err) {
     console.error('POST /api/skills/suggest error:', err.message);
     res.status(500).json({
@@ -867,14 +913,42 @@ app.post('/api/skills/suggest', async (req, res) => {
 
 app.post('/api/roadmap/generate', async (req, res) => {
   try {
-    const { generateRoadmap } = await import('./ai/mistralSkills.js');
+    const { skill } = req.body;
 
-    if (!generateRoadmap) {
-      throw new Error('generateRoadmap function not found in mistralSkills.js');
+    if (!skill || typeof skill !== 'string') {
+      return res.status(400).json({ error: 'Skill parameter must be a non-empty string' });
     }
 
-    const result = await generateRoadmap(req.body);
-    res.json(result);
+    const prompt = `Create a detailed learning roadmap for ${skill.trim()}. Return as JSON with this format:
+{
+  "title": "Skill Learning Roadmap",
+  "description": "Overview of the learning journey",
+  "milestones": [
+    {
+      "title": "Milestone Title",
+      "description": "What to learn in this milestone",
+      "duration": "X weeks",
+      "resources": ["Resource 1", "Resource 2"],
+      "projects": ["Project idea 1", "Project idea 2"]
+    }
+  ],
+  "estimatedTime": "Total time to complete"
+}`;
+
+    const response = await mistral.invoke(prompt);
+    const content = response.content;
+
+    try {
+      const roadmap = JSON.parse(content);
+      res.json(roadmap);
+    } catch (parseError) {
+      console.error('Failed to parse Mistral response as JSON:', content);
+      res.status(500).json({
+        success: false,
+        message: "AI service returned invalid format",
+        error: parseError.message
+      });
+    }
   } catch (err) {
     console.error('POST /api/roadmap/generate error:', err.message);
     res.status(500).json({
@@ -887,21 +961,17 @@ app.post('/api/roadmap/generate', async (req, res) => {
 
 app.post('/api/ai', async (req, res) => {
   try {
-    const axios = (await import('axios')).default;
-    const response = await axios.post(
-      "https://api.mistral.ai/v1/chat/completions",
-      {
-        model: process.env.MISTRAL_MODEL || "mistral-small",
-        messages: [{ role: "user", content: req.body.prompt }]
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.MISTRAL_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
-    res.json(response.data);
+    const { prompt } = req.body;
+
+    if (!prompt || typeof prompt !== 'string') {
+      return res.status(400).json({ error: 'Prompt must be a non-empty string' });
+    }
+
+    const response = await mistral.invoke(prompt);
+    res.json({
+      response: response.content,
+      success: true
+    });
   } catch (err) {
     console.error('AI endpoint error:', err.response?.data || err.message);
     res.status(500).json({

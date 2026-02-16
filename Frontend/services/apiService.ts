@@ -285,11 +285,23 @@ export const apiService = {
 
   suggestSkills: async (currentSkills: string[], currentGoals: string[] = []) => {
     try {
-      const skills = await suggestSkillsDirect(currentSkills, currentGoals);
-      return { skills };
+      const response = await fetch(`${API_URL}/api/skills/suggest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentSkills, currentGoals })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to suggest skills: ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('Skills suggested successfully:', data);
+      return data;
     } catch (error) {
       console.error('Skill suggestion failed:', error);
-      throw new Error('Failed to suggest skills');
+      throw new Error('Failed to suggest skills. Please try again.');
     }
   },
 
