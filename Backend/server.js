@@ -108,7 +108,7 @@ async function createTable(tableName) {
   switch (tableName) {
     case 'users':
       createQuery = `
-        CREATE TABLE users (
+        CREATE TABLE IF NOT EXISTS users (
           id VARCHAR(36) PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
           email VARCHAR(255) UNIQUE NOT NULL,
@@ -127,7 +127,7 @@ async function createTable(tableName) {
 
     case 'exchange_requests':
       createQuery = `
-        CREATE TABLE exchange_requests (
+        CREATE TABLE IF NOT EXISTS exchange_requests (
           id VARCHAR(36) PRIMARY KEY,
           requester_id VARCHAR(36) NOT NULL,
           target_id VARCHAR(36) NOT NULL,
@@ -148,7 +148,7 @@ async function createTable(tableName) {
 
     case 'exchange_feedback':
       createQuery = `
-        CREATE TABLE exchange_feedback (
+        CREATE TABLE IF NOT EXISTS exchange_feedback (
           id VARCHAR(36) PRIMARY KEY,
           exchange_request_id VARCHAR(36) NOT NULL,
           from_user_id VARCHAR(36) NOT NULL,
@@ -168,13 +168,13 @@ async function createTable(tableName) {
 
     case 'messages':
       createQuery = `
-        CREATE TABLE messages (
+        CREATE TABLE IF NOT EXISTS messages (
           id VARCHAR(36) PRIMARY KEY,
           sender_id VARCHAR(36) NOT NULL,
           receiver_id VARCHAR(36) NOT NULL,
           content TEXT NOT NULL,
           timestamp BIGINT NOT NULL,
-          read BOOLEAN DEFAULT FALSE,
+          \`read\` BOOLEAN DEFAULT FALSE,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
           FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -187,7 +187,7 @@ async function createTable(tableName) {
 
     case 'quizzes':
       createQuery = `
-        CREATE TABLE quizzes (
+        CREATE TABLE IF NOT EXISTS quizzes (
           id VARCHAR(36) PRIMARY KEY,
           title VARCHAR(255) NOT NULL,
           description TEXT,
@@ -206,7 +206,7 @@ async function createTable(tableName) {
 
     case 'quiz_attempts':
       createQuery = `
-        CREATE TABLE quiz_attempts (
+        CREATE TABLE IF NOT EXISTS quiz_attempts (
           id VARCHAR(36) PRIMARY KEY,
           user_id VARCHAR(36) NOT NULL,
           quiz_id VARCHAR(36) NOT NULL,
