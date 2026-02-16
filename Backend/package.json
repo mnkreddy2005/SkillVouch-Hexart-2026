@@ -1,0 +1,21 @@
+{
+  "name": "skillvouch-backend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.1.8",
+    "@langchain/mistralai": "^1.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "mysql2": "^3.15.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.3"
+  }
+}
