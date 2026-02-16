@@ -12,9 +12,11 @@ const app = express()
 // Security headers
 app.use(helmet())
 
-// CORS configuration
+// Security and CORS
+// IMPORTANT: Frontend must use backend URL from environment variable VITE_API_URL
+// Do NOT call Vercel domain directly - use Render backend URL instead
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:3000",
+  origin: process.env.FRONTEND_URL || "https://svai-hexart27.vercel.app",
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }))
@@ -386,24 +388,97 @@ app.post('/api/quiz/generate', async (req, res) => {
   }
 });
 
+// ========================================
+// SKILLS VALIDATION HELPERS
+// ========================================
+
+function validateSkill(skill) {
+  if (!skill || typeof skill !== 'object') {
+    throw new Error('Skill must be an object');
+  }
+  if (!skill.name || typeof skill.name !== 'string') {
+    throw new Error('Skill must have a valid name');
+  }
+  return {
+    name: skill.name.trim(),
+    verified: skill.verified === true, // Default to false if not true
+    level: skill.level || 'beginner',
+    experienceYears: skill.experienceYears || 0,
+    availability: Array.isArray(skill.availability) ? skill.availability : []
+  };
+}
+
+function validateSkillsArray(skills) {
+  if (!Array.isArray(skills)) {
+    throw new Error('Skills must be an array');
+  }
+  return skills.map(validateSkill);
+}
+
+// ========================================
+// EXCHANGE REQUESTS ENDPOINT
+// ========================================
+
+app.get('/api/requests', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    // Get exchange requests where user is requester OR target
+    const requests = await query(
+      'SELECT * FROM exchange_requests WHERE requester_id = ? OR target_id = ? ORDER BY created_at DESC',
+      [userId, userId]
+    );
+
+    res.json(requests.map(mapExchangeRequestRow));
+  } catch (err) {
+    console.error('GET /api/requests error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch requests' });
+  }
+});
+
 // User endpoints
 app.post('/api/users', async (req, res) => {
   try {
     const { id, name, email, password, bio, skillsKnown, skillsToLearn, discordLink } = req.body
 
+    // Validate required fields
+    if (!id || !name || !email) {
+      return res.status(400).json({ error: 'ID, name, and email are required' });
+    }
+
+    // Validate and normalize skills
+    let validatedSkillsKnown = [];
+    let validatedSkillsToLearn = [];
+
+    if (skillsKnown) {
+      validatedSkillsKnown = validateSkillsArray(skillsKnown);
+    }
+    if (skillsToLearn) {
+      validatedSkillsToLearn = validateSkillsArray(skillsToLearn);
+    }
+
+    // Always JSON.stringify before storing
+    const skillsKnownJson = JSON.stringify(validatedSkillsKnown);
+    const skillsToLearnJson = JSON.stringify(validatedSkillsToLearn);
+
     await query(
       `INSERT INTO users (id, name, email, password, bio, skills_known, skills_to_learn, discord_link, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, name, email, password || '', bio || '', JSON.stringify(skillsKnown || []), JSON.stringify(skillsToLearn || []), discordLink || '', 5.0]
+      [id, name, email, password || '', bio || '', skillsKnownJson, skillsToLearnJson, discordLink || '', 5.0]
     )
 
     const newUsers = await query('SELECT * FROM users WHERE id = ?', [id])
     res.status(201).json(mapUserRow(newUsers[0]))
   } catch (err) {
-    console.error('POST /api/users error', err)
-    if (err.code === 'ER_DUP_ENTRY') {
-      res.status(409).json({ error: 'User already exists' })
+    if (err.message.includes('Skill') || err.message.includes('skills')) {
+      res.status(400).json({ error: 'Invalid skills format: ' + err.message });
+    } else if (err.code === 'ER_DUP_ENTRY') {
+      res.status(409).json({ error: 'User already exists' });
     } else {
-      res.status(500).json({ error: 'Failed to create user' })
+      console.error('POST /api/users DB write failed:', err.message);
+      res.status(500).json({ error: 'Failed to create user' });
     }
   }
 })
@@ -469,37 +544,74 @@ app.get('/api/users/:id', async (req, res) => {
 app.put('/api/users/:id', async (req, res) => {
   try {
     const { id } = req.params
-    const { name, bio, skillsKnown, skillsToLearn, discordLink, password } = req.body
-    
+    const { name, bio, skillsKnown, skillsToLearn, discordLink, password, email } = req.body
+
     // Check if user exists first
     const existingUsers = await query('SELECT * FROM users WHERE id = ?', [id])
     if (existingUsers.length === 0) {
       // If user doesn't exist, create them (for signup flow)
+      const validatedSkillsKnown = skillsKnown ? validateSkillsArray(skillsKnown) : [];
+      const validatedSkillsToLearn = skillsToLearn ? validateSkillsArray(skillsToLearn) : [];
+
       await query(
         `INSERT INTO users (id, name, email, password, bio, skills_known, skills_to_learn, discord_link, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, name, req.body.email || '', password || '', bio || '', JSON.stringify(skillsKnown || []), JSON.stringify(skillsToLearn || []), discordLink || '', 5.0]
+        [id, name || '', email || '', password || '', bio || '', JSON.stringify(validatedSkillsKnown), JSON.stringify(validatedSkillsToLearn), discordLink || '', 5.0]
       )
     } else {
-      // Update existing user
+      // Update existing user - preserve existing skills if not provided
+      const existingUser = existingUsers[0];
+
+      // Preserve existing skills if not provided in request
+      let finalSkillsKnown = safeParseJSON(existingUser.skills_known, []);
+      let finalSkillsToLearn = safeParseJSON(existingUser.skills_to_learn, []);
+
+      // Only update skills if they are provided in the request
+      if (skillsKnown !== undefined) {
+        finalSkillsKnown = validateSkillsArray(skillsKnown);
+      }
+      if (skillsToLearn !== undefined) {
+        finalSkillsToLearn = validateSkillsArray(skillsToLearn);
+      }
+
+      // Always JSON.stringify before storing
+      const skillsKnownJson = JSON.stringify(finalSkillsKnown);
+      const skillsToLearnJson = JSON.stringify(finalSkillsToLearn);
+
       const updateFields = ['name = ?', 'bio = ?', 'skills_known = ?', 'skills_to_learn = ?', 'discord_link = ?']
-      const updateValues = [name, bio, JSON.stringify(skillsKnown || []), JSON.stringify(skillsToLearn || []), discordLink]
-      
-      if (password) {
+      const updateValues = [
+        name !== undefined ? name : existingUser.name,
+        bio !== undefined ? bio : existingUser.bio,
+        skillsKnownJson,
+        skillsToLearnJson,
+        discordLink !== undefined ? discordLink : existingUser.discord_link
+      ]
+
+      if (password !== undefined) {
         updateFields.push('password = ?')
         updateValues.push(password)
       }
-      
+
       updateFields.push('WHERE id = ?')
       updateValues.push(id)
-      
-      await query(`UPDATE users SET ${updateFields.join(' ')}`, updateValues)
+
+      await query(`UPDATE users SET ${updateFields.join(', ')}`, updateValues)
     }
-    
+
+    // Immediately SELECT and return updated user from DB
     const updatedUsers = await query('SELECT * FROM users WHERE id = ?', [id])
+    if (updatedUsers.length === 0) {
+      console.error('PUT /api/users/:id DB write failed: User not found after update');
+      return res.status(500).json({ error: 'User update failed - user not found after update' });
+    }
+
     res.json(mapUserRow(updatedUsers[0]))
   } catch (err) {
-    console.error('PUT /api/users/:id error', err)
-    res.status(500).json({ error: 'Failed to update/create user' })
+    if (err.message.includes('Skill') || err.message.includes('skills')) {
+      res.status(400).json({ error: 'Invalid skills format: ' + err.message });
+    } else {
+      console.error('PUT /api/users/:id DB write failed:', err.message);
+      res.status(500).json({ error: 'Failed to update user' });
+    }
   }
 })
 
