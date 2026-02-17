@@ -16,7 +16,7 @@ app.use(helmet())
 // IMPORTANT: Frontend must use backend URL from environment variable VITE_API_URL
 // Do NOT call Vercel domain directly - use Render backend URL instead
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "https://svai-hexart27.vercel.app",
+  origin: process.env.FRONTEND_URL || ["http://localhost:5173", "http://localhost:3000"],
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }))
@@ -83,13 +83,13 @@ const maxDbRetries = 5
 async function checkDatabaseConnection() {
   dbConnectionAttempts++
   console.log(`🔍 Checking database connection (attempt ${dbConnectionAttempts}/${maxDbRetries})...`)
-  
+
   try {
     const connection = await pool.getConnection()
     await connection.ping()
     await connection.execute('SELECT 1')
     connection.release()
-    
+
     if (!dbConnected) {
       dbConnected = true
       console.log('✅ MySQL connected successfully!')
@@ -101,7 +101,7 @@ async function checkDatabaseConnection() {
   } catch (err) {
     dbConnected = false
     console.error(`❌ MySQL connection failed (attempt ${dbConnectionAttempts}):`, err.message)
-    
+
     if (dbConnectionAttempts < maxDbRetries) {
       console.log(`🔄 Retrying database connection in 5 seconds...`)
       setTimeout(checkDatabaseConnection, 5000)
@@ -119,7 +119,7 @@ checkDatabaseConnection()
 setInterval(async () => {
   const wasConnected = dbConnected
   await checkDatabaseConnection()
-  
+
   if (wasConnected && !dbConnected) {
     console.log('⚠️  Database connection lost!')
   } else if (!wasConnected && dbConnected) {
@@ -147,7 +147,7 @@ async function testMistralConnection() {
         timeout: 5000
       }
     )
-    
+
     if (!mistralConnected) {
       mistralConnected = true
       console.log('✅ Mistral AI connected successfully!')
@@ -171,7 +171,7 @@ setInterval(testMistralConnection, 60000) // Check every minute
 app.get("/api/status", (req, res) => {
   const uptime = process.uptime()
   const uptimeFormatted = `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${Math.floor(uptime % 60)}s`
-  
+
   const status = {
     status: "running",
     timestamp: new Date().toISOString(),
@@ -193,7 +193,7 @@ app.get("/api/status", (req, res) => {
     },
     endpoints: {
       users: 'available',
-      login: 'available', 
+      login: 'available',
       ai: mistralConnected ? 'available' : 'unavailable',
       health: 'available'
     },
@@ -202,7 +202,7 @@ app.get("/api/status", (req, res) => {
       total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024 * 100) / 100
     }
   }
-  
+
   console.log(`📊 Status check requested from ${req.ip} - Database: ${dbConnected ? '✅' : '❌'}, Mistral: ${mistralConnected ? '✅' : '❌'}`)
   res.json(status)
 })
@@ -218,7 +218,7 @@ app.get("/api/health", (req, res) => {
       memory: process.memoryUsage().heapUsed < 500 * 1024 * 1024 ? 'pass' : 'warn' // Warn if > 500MB
     }
   }
-  
+
   res.status(health.healthy ? 200 : 503).json(health)
 })
 
@@ -508,19 +508,19 @@ app.post('/api/users', async (req, res) => {
 app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body
-    
+
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' })
     }
-    
+
     const users = await query('SELECT * FROM users WHERE email = ?', [email])
-    
+
     if (users.length === 0) {
       return res.status(401).json({ error: 'Invalid email or password' })
     }
-    
+
     const user = users[0]
-    
+
     // For now, accept any password if user exists
     // In production, you'd hash and verify passwords properly
     if (!user.password && password) {
@@ -528,7 +528,7 @@ app.post('/api/login', async (req, res) => {
       await query('UPDATE users SET password = ? WHERE id = ?', [password, user.id])
       user.password = password
     }
-    
+
     res.json({
       user: mapUserRow(user),
       token: 'simple-token-' + user.id // Simple token for now

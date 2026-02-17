@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 // Mistral AI configuration
-const MISTRAL_API_KEY = 'WCDEgp3sS6bERPYNBvhYvzFyT5UzVkdZ';
+const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
 const MISTRAL_API_URL = 'https://api.mistral.ai/v1/chat/completions';
 
 // Generate learning roadmap for a specific skill
@@ -88,9 +88,9 @@ Requirements:
     res.json(parsed);
   } catch (error) {
     console.error('Learning roadmap generation error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to generate learning roadmap',
-      message: error.message 
+      message: error.message
     });
   }
 });
@@ -163,9 +163,9 @@ Requirements:
     res.json(parsed);
   } catch (error) {
     console.error('Skill suggestion error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to suggest skills',
-      message: error.message 
+      message: error.message
     });
   }
 });

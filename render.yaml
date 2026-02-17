@@ -12,17 +12,17 @@ services:
       - key: PORT
         value: 5000
       - key: DB_HOST
-        value: mysql-meruva.alwaysdata.net
+        sync: false
       - key: DB_USER
-        value: meruva
+        sync: false
       - key: DB_PASS
-        value: meruva_12345
+        sync: false
       - key: DB_NAME
-        value: meruva_skillvouch
+        sync: false
       - key: MISTRAL_API_KEY
-        value: WCDEgp3sS6bERPYNBvhYvzFyT5UzVkdZ
+        sync: false
       - key: MISTRAL_MODEL
-        value: mistral-small
+        sync: false
 
   # Frontend Service (Vercel - separate deployment)
   # Note: Frontend should be deployed separately to Vercel
